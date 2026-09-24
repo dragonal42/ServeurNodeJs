@@ -1,6 +1,6 @@
 # billiar-lobby — serveur de jeux multijoueurs (Docker + Dockhand)
 
-Express + Socket.IO + sqlite3, SFTP avec interface web (SFTPGo), publié
+Fastify + Socket.IO + sqlite3, SFTP avec interface web (SFTPGo), publié
 par Caddy (caddy-docker-proxy, réseau `proxy-net`) sur `multi.billiar.info`. Installation et mises à jour
 **automatiques depuis GitHub via Dockhand**.
 
@@ -96,8 +96,8 @@ git push -u origin main
 
 ## 5. Après le premier déploiement
 
-1. Connectez-vous à SFTPGo `http://IP:8081/web/admin` (admin + mot de passe
-   de l'étape 3) → créez l'utilisateur SFTP, **home** : `/srv/warpclash`.
+1. Connectez-vous à SFTPGo `https://sftp.billiar.info/web/admin` (entrée DNS `sftp` → IP du serveur, comme `multi`) (admin + mot de passe
+   de l'étape 3) → créez l'utilisateur SFTP, **home** : `/app`.
 2. FileZilla : protocole **SFTP**, hôte `multi.billiar.info`, port **2022**.
 3. Le serveur **tourne déjà** : `https://multi.billiar.info` affiche le
    mini-jeu **Attrape-étoiles** (ouvrez 2 onglets pour le voir en multi).
@@ -107,33 +107,44 @@ git push -u origin main
 4. Test : `https://multi.billiar.info` et
    `curl "https://multi.billiar.info/socket.io/?EIO=4&transport=polling"` → `0{"sid":…`
 
-## Le serveur générique (`server.js` de départ)
+## Le serveur multi-sites (`server.js` de départ, Fastify)
 
-Aucune règle de jeu côté serveur : il sert `public/` et **relaie**.
-Toute personne qui ouvre la page est un joueur de la room **commune**
-(un jeu peut en demander une autre : `io({ query: { room: 'x' } })`).
-Le joueur présent depuis le plus longtemps est élu **hôte** (arbitre) ;
-s'il part, le suivant prend le relais.
+```
+/opt/nodejs/                  → https://multi.billiar.info/
+├── server.js                   le serveur (réinstallé s'il est supprimé)
+├── server-*.js                 modules RACINE chargés tout seuls
+│                               (server-chat.js, server-bibiplay.js…)
+├── blacklist.txt               IP bannies — relu en 2 s, sans redémarrer
+├── public/                     site par défaut  → /
+├── courseetoile/               exemple de sous-site → /courseetoile/
+│   ├── api.js                    logique serveur : register(app, contexte)
+│   ├── .env                      réglages propres (facultatif)
+│   └── public/                   pages, jeu p5.js
+└── MON-API/ …                  un dossier = une adresse
+```
 
-| Le client envoie | Les autres reçoivent |
-|---|---|
-| `game:event` data | `game:update {from, data}` — **toute** la room, moi compris |
-| `game:broadcast` data | `game:broadcast {from, data}` — les **autres** |
-| `game:to` (id, data) | `game:direct {from, data}` — **un** joueur |
-| `player:update {name, color}` | `room:player-updated {player}` |
+- **Sous-site** : tout dossier contenant `api.js` (ou `server.js`) et/ou `public/`.
+  Ses routes sont préfixées (`app.get('/etat')` → `/courseetoile/etat`) et il a
+  son propre espace Socket.IO (`io('/courseetoile')` côté navigateur).
+  Désactiver sans supprimer : renommer le dossier avec `_` devant.
+- **Racine** : `public/` est servi sur `/` ; les `server-*.js` reçoivent
+  l'instance principale. Format historique `function (socket, log)` accepté.
+- **Liste manuelle** : `MODULES_MANUELS` en haut de `server.js` (vide = auto).
+- **Compatibilité Express** : `res.json()`, `res.status().json()`, `res.set()`…
+  marchent dans les routes (ex. `initAPI(app)` des jeux `public/games/*/server.js`).
+- **Jamais servis** : `server.js`, `api.js`, `*.db`, `*.sqlite`, `.env`, fichiers cachés.
+- **`/health`** : sites chargés, erreurs, joueurs par espace.
+- Un module en erreur n'empêche pas les autres de démarrer (voir `/health`).
+- Les fichiers de départ ne sont installés qu'**une fois** (mémorisés dans
+  `data/.seeds-installes`) : un exemple supprimé ne revient pas. Seul
+  `server.js` est réinstallé s'il manque.
 
-Reçus automatiquement : `room:welcome {you, players, hostId}`,
-`room:player-joined`, `room:player-left`, `room:host {hostId}`.
-Supervision : `GET /health`. Anti-flood 60 msg/s, 16 Ko max par message.
+## Ports
 
-**Le mini-jeu (`public/jeu.js`, p5.js, entièrement commenté)** montre les
-trois usages : position de chaque joueur → `game:broadcast` (~15/s,
-interpolée) ; l'hôte fait apparaître les étoiles et valide les prises →
-`game:event` ; un nouveau venu reçoit l'état complet → `game:to`.
-Premier à 10 étoiles gagne la manche.
-
-p5.js 1.11 est embarqué dans `public/lib/` (aucun CDN) — licence LGPL,
-fichier `p5.LICENSE.txt` à côté.
+Un seul port est ouvert sur l'hôte : **2022 (SFTP)**, réglable par
+`SFTPGO_PORT_SFTP`. Le jeu (`CADDY_URL`) et l'interface web SFTPGo
+(`SFTPGO_URL`) passent par Caddy via `proxy-net` → aucun conflit avec les
+ports 3000/8080/8081/8082 déjà pris par vos autres services.
 
 ## Port 3000
 
