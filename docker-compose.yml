@@ -82,10 +82,10 @@ services:
       - SFTPGO_FTPD__PASSIVE_PORT_RANGE__START=50000
       - SFTPGO_FTPD__PASSIVE_PORT_RANGE__END=50100
     ports:
-      - "${SFTPGO_ADMIN_USER:-8082}:8080"              # interface web SFTPGo → http://IP:8081 (8080 de l'hôte déjà pris)
-      - "${SFTPGO_ADMIN_USER:-2022}:2022"              # SFTP (FileZilla : SFTP, multi.billiar.info, 2022)
+      - "${SFTPGO_PORT_WEB:-8082}:8080"              # interface web SFTPGo → http://IP:8081 (8080 de l'hôte déjà pris)
+      - "${SFTPGO_PORT_SFTP:-2022}:2022"              # SFTP (FileZilla : SFTP, multi.billiar.info, 2022)
       #- "2121:2121"              # FTP (optionnel)
-      - "${SFTPGO_ADMIN_USER:-50000-50100}:50000-50100"
+      - "${SFTPGO__PORTS_FTP:-50000-50100}:50000-50100"
     volumes:
       - /opt/sftpgo:/srv/sftpgo        # comptes/config
       - /opt/nodejs:/srv/warpclash     # home SFTP = /opt/nodejs
