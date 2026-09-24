@@ -77,15 +77,15 @@ services:
       # dans /opt/sftpgo ; changer la variable ne le modifie plus).
       - SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN=true
       - SFTPGO_DEFAULT_ADMIN_USERNAME=${SFTPGO_ADMIN_USER:-admin}
-      - SFTPGO_DEFAULT_ADMIN_PASSWORD=${SFTPGO_ADMIN_PASSWORD:?Définir SFTPGO_ADMIN_PASSWORD dans l'environnement de la stack Dockhand}
+      - SFTPGO_DEFAULT_ADMIN_PASSWORD=${SFTPGO_ADMIN_PASSWORD:?Définir SFTPGO_ADMIN_PASSWORD}
       - SFTPGO_FTPD__BINDINGS__0__PORT=2121
       - SFTPGO_FTPD__PASSIVE_PORT_RANGE__START=50000
       - SFTPGO_FTPD__PASSIVE_PORT_RANGE__END=50100
     ports:
-      - "8081:8080"              # interface web SFTPGo → http://IP:8081 (8080 de l'hôte déjà pris)
-      - "2022:2022"              # SFTP (FileZilla : SFTP, multi.billiar.info, 2022)
-      - "2121:2121"              # FTP (optionnel)
-      - "50000-50100:50000-50100"
+      - "${SFTPGO_ADMIN_USER:-8082}:8080"              # interface web SFTPGo → http://IP:8081 (8080 de l'hôte déjà pris)
+      - "${SFTPGO_ADMIN_USER:-2022}:2022"              # SFTP (FileZilla : SFTP, multi.billiar.info, 2022)
+      #- "2121:2121"              # FTP (optionnel)
+      - "${SFTPGO_ADMIN_USER:-50000-50100}:50000-50100"
     volumes:
       - /opt/sftpgo:/srv/sftpgo        # comptes/config
       - /opt/nodejs:/srv/warpclash     # home SFTP = /opt/nodejs
