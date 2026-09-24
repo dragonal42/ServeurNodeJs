@@ -1,0 +1,8 @@
+# Le build n'utilise que package.json, entrypoint.sh et seed/
+.git
+.env
+node_modules
+data
+tmp
+*.md
+docker-compose.yml

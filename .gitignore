@@ -1,0 +1,8 @@
+# Jamais dans Git : données vivantes et secrets
+.env
+node_modules/
+data/
+tmp/
+*.db
+*.db-journal
+*.log

@@ -1,0 +1,5 @@
+# Évite qu'un clone Windows convertisse les scripts en CRLF (casse le shebang)
+* text=auto
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf

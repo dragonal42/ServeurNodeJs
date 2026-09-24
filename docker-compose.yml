@@ -1,0 +1,98 @@
+# ============================================================
+# billiar.info — Serveur de jeux + SFTP avec interface web
+# Déployé par Dockhand depuis GitHub (voir README.md)
+# ------------------------------------------------------------
+# Git  = l'INFRA (ce fichier, Dockerfile, entrypoint.sh, package.json)
+# SFTP = le CODE VIVANT dans /opt/nodejs (jeux, server.js…)
+#
+# Tout ce qui compte vit sur le disque du serveur :
+#   /opt/nodejs/   code + public/ + data/chat.db + tmp/restart.txt
+#   /opt/sftpgo/   comptes & config SFTPGo
+# ⇒ redéploiement Dockhand, rebuild, suppression d'image : rien
+#   n'est perdu. Chemins ABSOLUS obligatoires (Dockhand clone le
+#   dépôt dans son propre dossier : un chemin relatif ./xxx
+#   pointerait là-bas, pas dans /opt).
+#
+# Variables (à renseigner dans l'onglet « Environment » de la
+# stack Dockhand, ou fichier .env — voir .env.example) :
+#   SFTPGO_ADMIN_PASSWORD  (obligatoire)
+#   DOMAIN                 (défaut multi.billiar.info)
+# ============================================================
+services:
+
+  # ---- Préparation (tourne ~1 s puis s'arrête : état « Exited 0 » normal) ----
+  # Crée /opt/nodejs et /opt/sftpgo au 1er déploiement et leur donne
+  # l'uid 1000 (utilisateur de SFTPGo), sinon SFTPGo ne peut pas écrire.
+  prepare:
+    image: busybox:1.36
+    restart: "no"
+    command: >
+      sh -c "mkdir -p /opt/nodejs/public /opt/nodejs/data /opt/nodejs/tmp /opt/sftpgo
+      && chown 1000:1000 /opt/nodejs /opt/nodejs/public /opt/nodejs/data /opt/nodejs/tmp
+      && chown -R 1000:1000 /opt/sftpgo
+      && echo 'dossiers /opt prêts'"
+    volumes:
+      - /opt/nodejs:/opt/nodejs
+      - /opt/sftpgo:/opt/sftpgo
+
+  lobby:
+    build: .
+    image: billiar-lobby:latest
+    container_name: billiar-lobby
+    restart: unless-stopped
+    depends_on:
+      prepare:
+        condition: service_completed_successfully
+    ports:
+      - "3000:3000"          # si Caddy est la seule entrée publique : "127.0.0.1:3000:3000"
+    labels:
+      # caddy-docker-proxy : génère  DOMAIN { reverse_proxy lobby:3000 } + HTTPS
+      - "caddy=${DOMAIN:-multi.billiar.info}"
+      - "caddy.encode"
+      - "caddy.reverse_proxy={{upstreams 3000}}"
+    environment:
+      - PORT=3000
+      - DB_PATH=/app/data/chat.db
+      - WATCH=0                  # 1 = nodemon recharge à chaque .js (dev)
+      - RESTART_POLL=2           # surveillance de tmp/restart.txt (s)
+      - RESTART_CRASH_DELAY=5    # relance auto après plantage (s)
+      - REQUIRED_FILES=server.js server-bibiplay.js
+    volumes:
+      - /opt/nodejs:/app         # UN SEUL montage : tout le projet
+    networks:
+      - caddy
+
+  sftpgo:
+    image: drakkan/sftpgo:latest
+    container_name: sftpgo
+    restart: unless-stopped
+    depends_on:
+      prepare:
+        condition: service_completed_successfully
+    environment:
+      # Compte admin créé au 1er démarrage seulement (ensuite stocké
+      # dans /opt/sftpgo ; changer la variable ne le modifie plus).
+      - SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN=true
+      - SFTPGO_DEFAULT_ADMIN_USERNAME=${SFTPGO_ADMIN_USER:-admin}
+      - SFTPGO_DEFAULT_ADMIN_PASSWORD=${SFTPGO_ADMIN_PASSWORD:?Définir SFTPGO_ADMIN_PASSWORD dans l'environnement de la stack Dockhand}
+      - SFTPGO_FTPD__BINDINGS__0__PORT=2121
+      - SFTPGO_FTPD__PASSIVE_PORT_RANGE__START=50000
+      - SFTPGO_FTPD__PASSIVE_PORT_RANGE__END=50100
+    ports:
+      - "8080:8080"              # interface web admin + client web
+      - "2022:2022"              # SFTP (FileZilla : SFTP, multi.billiar.info, 2022)
+      - "2121:2121"              # FTP (optionnel)
+      - "50000-50100:50000-50100"
+    volumes:
+      - /opt/sftpgo:/srv/sftpgo        # comptes/config
+      - /opt/nodejs:/srv/warpclash     # home SFTP = /opt/nodejs
+    networks:
+      - caddy
+
+# Réseau du Caddy existant. external: il n'est ni créé ni supprimé par
+# cette stack (évite le conflit « network caddy exists but was not
+# created by this project »). S'il n'existe pas encore :
+#   docker network create caddy     (ou Dockhand → Networks → Create)
+networks:
+  caddy:
+    external: true
