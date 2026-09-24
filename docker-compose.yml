@@ -91,6 +91,11 @@ services:
       # FTP classique désactivé : SFTP (FileZilla) suffit, et évite de
       # publier 2121 + la plage passive 50000-50100.
       - SFTPGO_FTPD__BINDINGS__0__PORT=0
+      # Logs moins bavards (l'image est en « debug » par défaut)
+      - SFTPGO_LOG_LEVEL=info
+      # Anti-bruteforce : bannit temporairement les IP qui ratent leurs
+      # connexions (l'interface est publique, les robots la scannent)
+      - SFTPGO_COMMON__DEFENDER__ENABLED=true
     ports:
       # SFTP : SEUL port publié. Il ne peut PAS passer par Caddy (ce n'est
       # pas du HTTP), il doit donc être ouvert directement.
