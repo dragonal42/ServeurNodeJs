@@ -2,7 +2,7 @@
   "name": "billiar-lobby-server",
   "version": "1.0.0",
   "private": true,
-  "description": "Serveur lobby multijeux (Express + Socket.IO + sqlite3) — billiar.info",
+  "description": "Serveur multijoueur générique (Express + Socket.IO) — billiar.info",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

@@ -60,7 +60,6 @@ services:
       - WATCH=0                  # 1 = nodemon recharge à chaque .js (dev)
       - RESTART_POLL=2           # surveillance de tmp/restart.txt (s)
       - RESTART_CRASH_DELAY=5    # relance auto après plantage (s)
-      - REQUIRED_FILES=server.js server-bibiplay.js
     volumes:
       - /opt/nodejs:/app         # UN SEUL montage : tout le projet
     networks:

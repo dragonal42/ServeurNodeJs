@@ -6,9 +6,9 @@
 #    fichiers ABSENTS de /opt/nodejs (server.js, page d'accueil…).
 #    Ne remplace JAMAIS un fichier existant → vos dépôts SFTP
 #    sont toujours prioritaires.
-# 2. ATTENTE : si un fichier requis manque (ex. server-bibiplay.js),
-#    Express n'est pas lancé ; tmp/restart.log l'indique et le
-#    démarrage se fait tout seul dès que le fichier est déposé.
+# 2. DÉMARRAGE IMMÉDIAT : le seed fournit un server.js générique
+#    + un mini-jeu p5.js dans public/ → Express démarre toujours.
+#    Remplacez/ajoutez vos fichiers par SFTP puis tmp/restart.txt.
 # 3. REDÉMARRAGE PAR FTP : déposer / remplacer / toucher
 #       /opt/nodejs/tmp/restart.txt   (= /app/tmp/restart.txt)
 #    → Express redémarre (≈2 s). Supprimer seul ne déclenche rien.
@@ -19,7 +19,7 @@
 # Variables (compose → environment) :
 #   RESTART_POLL=2          intervalle de surveillance (s)
 #   RESTART_CRASH_DELAY=5   délai avant relance après un crash (s)
-#   REQUIRED_FILES="server.js server-bibiplay.js"
+#   REQUIRED_FILES="server.js"   (sécurité si server.js est supprimé)
 #   WATCH=1                 mode nodemon (reload à chaque .js)
 # ============================================================
 
@@ -30,7 +30,7 @@ TRIGGER="$TMP_DIR/restart.txt"
 LOG="$TMP_DIR/restart.log"
 POLL="${RESTART_POLL:-2}"
 CRASH_DELAY="${RESTART_CRASH_DELAY:-5}"
-REQUIRED_FILES="${REQUIRED_FILES:-server.js server-bibiplay.js}"
+REQUIRED_FILES="${REQUIRED_FILES:-server.js}"
 PID=""
 WAITING=""
 
@@ -46,15 +46,21 @@ log() {
 }
 
 # ---- 1. Amorçage (no-clobber, fichier par fichier) ----
-if [ -d "$SEED_DIR" ]; then
+# Appelé au démarrage ET à chaque restart.txt : supprimer un fichier
+# de départ par SFTP puis déposer restart.txt le réinstalle d'origine.
+seed_missing() {
+  [ -d "$SEED_DIR" ] || return 0
   (cd "$SEED_DIR" && find . -type f) | while IFS= read -r f; do
     f="${f#./}"
     if [ ! -e "$APP_DIR/$f" ]; then
-      mkdir -p "$(dirname "$APP_DIR/$f")"
-      cp "$SEED_DIR/$f" "$APP_DIR/$f" && log "🌱 fichier initial installé : $f"
+      d="$(dirname "$APP_DIR/$f")"
+      mkdir -p "$d" && chown 1000:1000 "$d" 2>/dev/null
+      cp "$SEED_DIR/$f" "$APP_DIR/$f" && chown 1000:1000 "$APP_DIR/$f" 2>/dev/null
+      log "🌱 fichier de départ installé : $f"
     fi
   done
-fi
+}
+seed_missing
 
 # Permissions alignées avec SFTPGo (uid 1000) : tout reste modifiable
 # et supprimable par SFTP.
@@ -93,7 +99,7 @@ try_start() {
   M=$(missing)
   if [ -n "$M" ]; then
     if [ "$M" != "$WAITING" ]; then
-      log "⏳ en attente de : $M — déposez-le(s) par SFTP à la racine (/opt/nodejs), démarrage automatique ensuite"
+      log "⏳ fichier manquant : $M — déposez-le par SFTP à la racine (/opt/nodejs)"
     fi
     WAITING="$M"
     return 1
@@ -130,6 +136,7 @@ while true; do
     if [ "$NOW" != "none" ]; then
       log "↻ restart.txt modifié ($NOW) → redémarrage d'Express"
       stop_node
+      seed_missing
       try_start
       continue
     fi
