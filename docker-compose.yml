@@ -16,7 +16,9 @@
 # Variables (à renseigner dans l'onglet « Environment » de la
 # stack Dockhand, ou fichier .env — voir .env.example) :
 #   SFTPGO_ADMIN_PASSWORD  (obligatoire)
-#   CADDY_URL              (défaut multi.billiar.info)
+#   CADDY_URL              (défaut multi.billiar.info) — le jeu
+#   SFTPGO_URL             (défaut sftp.billiar.info)  — interface web SFTPGo
+#   SFTPGO_PORT_SFTP       (défaut 2022)               — port FileZilla
 # ============================================================
 services:
 
@@ -38,6 +40,7 @@ services:
   lobby:
     build: .
     image: billiar-lobby:latest
+    pull_policy: build         # image construite ici, jamais cherchée sur Docker Hub
     container_name: billiar-lobby
     restart: unless-stopped
     depends_on:
@@ -72,20 +75,30 @@ services:
     depends_on:
       prepare:
         condition: service_completed_successfully
+    labels:
+      # Interface web SFTPGo publiée par Caddy (HTTPS auto), SANS port ouvert
+      # sur l'hôte → plus aucun conflit de port possible (8080/8081/8082…).
+      # → https://sftp.billiar.info/web/admin  (entrée DNS nécessaire)
+      - "caddy=${SFTPGO_URL:-sftp.billiar.info}"
+      - "caddy.encode"
+      - "caddy.reverse_proxy={{upstreams 8080}}"
     environment:
       # Compte admin créé au 1er démarrage seulement (ensuite stocké
       # dans /opt/sftpgo ; changer la variable ne le modifie plus).
       - SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN=true
       - SFTPGO_DEFAULT_ADMIN_USERNAME=${SFTPGO_ADMIN_USER:-admin}
       - SFTPGO_DEFAULT_ADMIN_PASSWORD=${SFTPGO_ADMIN_PASSWORD:?Définir SFTPGO_ADMIN_PASSWORD}
-      - SFTPGO_FTPD__BINDINGS__0__PORT=2121
-      - SFTPGO_FTPD__PASSIVE_PORT_RANGE__START=50000
-      - SFTPGO_FTPD__PASSIVE_PORT_RANGE__END=50100
+      # FTP classique désactivé : SFTP (FileZilla) suffit, et évite de
+      # publier 2121 + la plage passive 50000-50100.
+      - SFTPGO_FTPD__BINDINGS__0__PORT=0
     ports:
-      - "${SFTPGO_PORT_WEB:-8082}:8080"              # interface web SFTPGo → http://IP:8081 (8080 de l'hôte déjà pris)
-      - "${SFTPGO_PORT_SFTP:-2022}:2022"              # SFTP (FileZilla : SFTP, multi.billiar.info, 2022)
-      #- "2121:2121"              # FTP (optionnel)
-      - "${SFTPGO__PORTS_FTP:-50000-50100}:50000-50100"
+      # SFTP : SEUL port publié. Il ne peut PAS passer par Caddy (ce n'est
+      # pas du HTTP), il doit donc être ouvert directement.
+      # FileZilla : protocole SFTP, hôte multi.billiar.info, port ci-dessous.
+      - "${SFTPGO_PORT_SFTP:-2022}:2022"
+      # Accès web direct en secours (si pas de DNS pour SFTPGO_URL) :
+      # décommenter avec un port LIBRE (vérifier : ss -tlnp | grep :PORT)
+      # - "${SFTPGO_PORT_WEB:-8090}:8080"
     volumes:
       - /opt/sftpgo:/srv/sftpgo        # comptes/config
       - /opt/nodejs:/srv/warpclash     # home SFTP = /opt/nodejs
