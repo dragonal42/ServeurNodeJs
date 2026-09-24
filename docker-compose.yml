@@ -96,6 +96,21 @@ services:
       # Anti-bruteforce : bannit temporairement les IP qui ratent leurs
       # connexions (l'interface est publique, les robots la scannent)
       - SFTPGO_COMMON__DEFENDER__ENABLED=true
+      # Réglages du « fail2ban intégré » : en 30 min, 5 essais avec un identifiant
+      # inexistant (2 pts) ou 10 mauvais mots de passe sur un vrai compte (1 pt)
+      # -> IP bannie 1 h (la durée augmente de 50 % à chaque récidive)
+      - SFTPGO_COMMON__DEFENDER__THRESHOLD=10
+      - SFTPGO_COMMON__DEFENDER__BAN_TIME=60
+      - SFTPGO_COMMON__DEFENDER__OBSERVATION_TIME=30
+      # INDISPENSABLE derrière Caddy : lire la vraie IP du visiteur dans X-Forwarded-For,
+      # sinon SFTPGo ne voit que l'IP de Caddy et bannirait... Caddy (donc tout le monde).
+      - SFTPGO_HTTPD__BINDINGS__0__PROXY_ALLOWED=172.16.0.0/12
+      - SFTPGO_HTTPD__BINDINGS__0__CLIENT_IP_PROXY_HEADER=X-Forwarded-For
+      # Liste blanche du defender (réseau local 192.168.x.x), chargée à chaque démarrage.
+      # Mode 1 = ajoute seulement les entrées absentes, sans toucher à celles
+      # que vous avez ajoutées ou modifiées dans l'interface web.
+      - SFTPGO_LOADDATA_FROM=/etc/sftpgo/liste-blanche.json
+      - SFTPGO_LOADDATA_MODE=1
     ports:
       # SFTP : SEUL port publié. Il ne peut PAS passer par Caddy (ce n'est
       # pas du HTTP), il doit donc être ouvert directement.
@@ -107,6 +122,7 @@ services:
     volumes:
       - /opt/sftpgo:/srv/sftpgo        # comptes/config
       - /opt/nodejs:/srv/warpclash     # home SFTP = /opt/nodejs
+      - ./sftpgo/liste-blanche.json:/etc/sftpgo/liste-blanche.json:ro  # IP jamais bannies
     networks:
       - proxy-net
 
