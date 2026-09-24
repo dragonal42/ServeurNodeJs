@@ -2,7 +2,14 @@
   "ip_lists": [
     {
       "ipornet": "192.168.0.0/16",
-      "description": "Réseau local (192.168.0.0 à 192.168.255.255) : jamais banni",
+      "description": "Réseau local (192.168.0.0 à 192.168.255.255)",
+      "type": 2,
+      "mode": 1,
+      "protocols": 0
+    },
+    {
+      "ipornet": "8.8.8.8/32",
+      "description": "Alain",
       "type": 2,
       "mode": 1,
       "protocols": 0
