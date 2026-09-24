@@ -1,0 +1,12 @@
+{
+  "ip_lists": [
+    {
+      "ipornet": "192.168.0.0/16",
+      "description": "Réseau local (192.168.0.0 à 192.168.255.255) : jamais banni",
+      "type": 2,
+      "mode": 1,
+      "protocols": 0
+    }
+  ],
+  "version": 17
+}
