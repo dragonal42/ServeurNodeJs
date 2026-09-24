@@ -43,8 +43,12 @@ services:
     depends_on:
       prepare:
         condition: service_completed_successfully
-    ports:
-      - "3000:3000"          # si Caddy est la seule entrée publique : "127.0.0.1:3000:3000"
+    # Pas de port publié sur l'hôte : Caddy joint le conteneur par proxy-net
+    # (billiar-lobby:3000). Évite aussi le conflit avec Dockhand, qui occupe
+    # déjà le port 3000 de l'hôte.
+    # Besoin d'un accès direct pour tester ?  ports: ["127.0.0.1:3001:3000"]
+    expose:
+      - "3000"
     labels:
       # caddy-docker-proxy : génère  CADDY_URL { reverse_proxy billiar-lobby:3000 } + HTTPS
       - "caddy=${CADDY_URL:-multi.billiar.info}"
@@ -79,7 +83,7 @@ services:
       - SFTPGO_FTPD__PASSIVE_PORT_RANGE__START=50000
       - SFTPGO_FTPD__PASSIVE_PORT_RANGE__END=50100
     ports:
-      - "8080:8080"              # interface web admin + client web
+      - "8081:8080"              # interface web SFTPGo → http://IP:8081 (8080 de l'hôte déjà pris)
       - "2022:2022"              # SFTP (FileZilla : SFTP, multi.billiar.info, 2022)
       - "2121:2121"              # FTP (optionnel)
       - "50000-50100:50000-50100"
