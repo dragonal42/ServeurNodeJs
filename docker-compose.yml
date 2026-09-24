@@ -16,7 +16,7 @@
 # Variables (à renseigner dans l'onglet « Environment » de la
 # stack Dockhand, ou fichier .env — voir .env.example) :
 #   SFTPGO_ADMIN_PASSWORD  (obligatoire)
-#   DOMAIN                 (défaut multi.billiar.info)
+#   CADDY_URL              (défaut multi.billiar.info)
 # ============================================================
 services:
 
@@ -46,8 +46,8 @@ services:
     ports:
       - "3000:3000"          # si Caddy est la seule entrée publique : "127.0.0.1:3000:3000"
     labels:
-      # caddy-docker-proxy : génère  DOMAIN { reverse_proxy lobby:3000 } + HTTPS
-      - "caddy=${DOMAIN:-multi.billiar.info}"
+      # caddy-docker-proxy : génère  CADDY_URL { reverse_proxy billiar-lobby:3000 } + HTTPS
+      - "caddy=${CADDY_URL:-multi.billiar.info}"
       - "caddy.encode"
       - "caddy.reverse_proxy={{upstreams 3000}}"
     environment:
@@ -60,7 +60,7 @@ services:
     volumes:
       - /opt/nodejs:/app         # UN SEUL montage : tout le projet
     networks:
-      - caddy
+      - proxy-net
 
   sftpgo:
     image: drakkan/sftpgo:latest
@@ -87,12 +87,9 @@ services:
       - /opt/sftpgo:/srv/sftpgo        # comptes/config
       - /opt/nodejs:/srv/warpclash     # home SFTP = /opt/nodejs
     networks:
-      - caddy
+      - proxy-net
 
-# Réseau du Caddy existant. external: il n'est ni créé ni supprimé par
-# cette stack (évite le conflit « network caddy exists but was not
-# created by this project »). S'il n'existe pas encore :
-#   docker network create caddy     (ou Dockhand → Networks → Create)
+# Réseau de votre Caddy (caddy-docker-proxy), comme sur vos autres serveurs.
 networks:
-  caddy:
+  proxy-net:
     external: true
