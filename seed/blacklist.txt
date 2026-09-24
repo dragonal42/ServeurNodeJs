@@ -1,0 +1,17 @@
+# ============================================================
+#  blacklist.txt — IP BANNIES du serveur Node (multi.billiar.info)
+# ------------------------------------------------------------
+#  Une IP ou une plage par ligne. « # » = commentaire.
+#  Pris en compte en 2 secondes, SANS redémarrer ; les connexions
+#  déjà ouvertes de ces IP sont coupées. Accès refusé partout :
+#  pages, API et Socket.IO (réponse 403).
+#
+#  Exemples :
+#    203.0.113.45            une seule IP
+#    198.51.100.0/24         toute la plage 198.51.100.0 → .255
+#    2001:db8::1             une IP v6
+#
+#  L'IP d'un visiteur apparaît dans les logs :  [86.200.12.34 Chrome/Windows]
+#  (⚠️ ne bannissez pas les IP 172.x : c'est Caddy, donc tout le monde)
+# ============================================================
+
