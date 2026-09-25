@@ -17,5 +17,8 @@
     "socket.io": "^4.8.1",
     "sqlite3": "^5.1.7",
     "express": "^4.21.2"
+  },
+  "scripts": {
+    "start": "TZ=Europe/Paris node server.js"
   }
 }
