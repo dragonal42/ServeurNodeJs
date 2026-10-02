@@ -1,0 +1,4 @@
+[submodule "seed/verbes"]
+	path = seed/verbes
+	url = https://github.com/dragonal42/ServeurNodeJsVerbesIrreguliersAnglais.git
+	branch = main

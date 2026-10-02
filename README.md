@@ -170,6 +170,52 @@ Note : `seed/server.js` ne sert qu'aux installations vierges ; le serveur
 utilise toujours `/opt/nodejs/server.js`. Mettre à jour `seed/` dans Git ne
 modifie donc **pas** un serveur déjà installé (c'est voulu).
 
+## Jeu verbes : dépôt lié
+
+Le jeu [ServeurNodeJsVerbesIrreguliersAnglais](https://github.com/dragonal42/ServeurNodeJsVerbesIrreguliersAnglais)
+est lié à ce dépôt comme **sous-module Git dans `seed/verbes`**. Il conserve son
+propre historique ; ce dépôt enregistre le commit exact à embarquer.
+
+```bash
+git clone --recurse-submodules https://github.com/dragonal42/ServeurNodeJs.git
+cd ServeurNodeJs
+# Pour une copie déjà existante :
+git submodule update --init --recursive
+```
+
+Le build copie le jeu dans `/seed/verbes`, puis l'amorçage installe les fichiers
+absents dans `/opt/nodejs/verbes` (`/app/verbes` dans le conteneur). Le serveur
+multi-sites découvre alors `api.js` et `public/`, à l'adresse **`/verbes/`**.
+Aucune modification du routeur ni second processus Node.js n'est nécessaire.
+
+**Dockhand :** le checkout utilisé pour construire l'image doit initialiser les
+sous-modules. Si l'outil ne le fait pas, ajouter la commande
+`git submodule update --init --recursive` dans la préparation du checkout avant
+le build. Le Dockerfile échoue avec un message explicite si le sous-module
+manque ; il ne produit pas silencieusement une image sans le jeu.
+
+Pour sélectionner une nouvelle version publiée du jeu (depuis un sous-module
+sans modifications locales) :
+
+```bash
+git -C seed/verbes fetch origin
+git -C seed/verbes checkout --detach origin/main
+git add seed/verbes
+git commit -m "Mettre à jour le jeu de verbes"
+git push
+```
+
+Un push dans le dépôt du jeu ne met **pas** automatiquement à jour le pointeur
+de ce dépôt. Inversement, un rebuild conserve tous les fichiers déjà présents
+dans `/opt/nodejs` : pour mettre à jour le jeu existant, transférer les fichiers
+de code voulus dans `verbes/` par SFTP, puis modifier `tmp/restart.txt`.
+Conserver `data/verbes-scores.db`, les `.env` et le vocabulaire local de `verbs.db`
+sauf remplacement volontaire de ce dernier. Ne pas transférer les métadonnées
+`.git` du sous-module ; elles sont également exclues de l'image Docker.
+
+Vérifier ensuite `/health`, `/verbes/etat` et `/verbes/`.
+Les instructions du jeu sont dans [son README](https://github.com/dragonal42/ServeurNodeJsVerbesIrreguliersAnglais#readme).
+
 ## Sauvegarde
 
 ```bash
