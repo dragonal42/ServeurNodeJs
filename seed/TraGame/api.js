@@ -180,7 +180,8 @@ async function register(app, ctx) {
     action('room:reset', (data, reply) => {
       const room = currentRoom();
       if (!room || room.hostId !== socket.id) return reply({ error: 'Seul l’admin peut rouvrir la selection.' });
-      if (room.phase === 'playing') return reply({ error: 'Le match en cours doit se terminer.' });
+      if (data.confirmed !== true) return reply({ error: 'Confirmez Nouvelle partie pour annuler le match.' });
+      if (data.gameId !== room.gameId) return reply({ error: 'Le match a change. Confirmez de nouveau Nouvelle partie.' });
       resetLobby(room);
       snapshot(room);
       reply({ ok: true });

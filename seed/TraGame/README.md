@@ -31,6 +31,15 @@ Le plateau Three.js, les terrains, les pieces, les combats, les animations,
 les sons synthetiques, la musique et les preferences d'affichage proviennent
 des sources locales. Les modes contre l'IA et a deux sur le meme ecran restent
 des entrainements locaux, hors statistiques. L'IA utilise un Web Worker.
+En local, choisir les parametres puis cliquer sur **Demarrer la partie**.
+Le camp, le terrain, le niveau et le mode sont verrouilles des le demarrage.
+Pour les modifier, **Nouvelle partie** (ou **Nouvel entrainement**) demande
+confirmation dans SweetAlert2, annule la partie et rend les reglages accessibles.
+L'affichage, la camera et les volumes restent reglables.
+
+Le bouton fixe sur le bord droit replie ou affiche le panneau de jeu. Le plateau
+utilise l'espace libere et continue de fonctionner. Ce choix est memorise dans
+le navigateur. Les regles sont presentees en six cartes sous le classement.
 
 En ligne, saisir un pseudo et creer une salle en laissant son code vide, ou
 rejoindre une salle avec son code. La salle accueille jusqu'a 50 participants,
@@ -56,8 +65,13 @@ Quand les deux ont accepte, l'admin peut lancer la revanche. L'admin commence
 la premiere partie ; ensuite les camps s'inversent apres chaque partie terminee,
 match nul compris. Rouge commence toujours dans le moteur, mais le joueur Rouge
 change : admin, adversaire, admin, etc. Une partie interrompue ne change pas
-cette alternance. L'admin peut aussi choisir **Choisir un autre adversaire**
-avant un lancement ou apres une fin de partie pour rouvrir la selection.
+cette alternance. L'admin peut aussi choisir **Nouvelle partie**, y compris
+pendant un match. SweetAlert2 demande explicitement confirmation : continuer le
+match ne change rien ; confirmer efface le plateau, le duel reserve et les
+accords de revanche et rouvre la selection. La partie annulee ne compte pas et
+les statistiques deja enregistrees sont conservees. Le serveur verifie le role
+admin, le marqueur de confirmation et l'identifiant de match pour refuser une
+ancienne confirmation. Aucun parametre du match n'est modifiable en cours de jeu.
 
 Le serveur genere le plateau, attribue les camps, valide chaque coup et calcule
 le resultat. Les messages indiquent l'identifiant de partie et sa revision pour
@@ -116,6 +130,8 @@ leurs mentions de licence. Tabulator 6.7.1 (MIT) est fourni dans `public/vendor/
 avec sa licence. Aucun CDN n'est necessaire. La dependance de developpement
 `tabulator-tables` permet de retrouver ces fichiers. Documentation des tris :
 https://www.tabulator.info/docs/6.x/sort/.
+SweetAlert2 est egalement fourni localement avec sa licence MIT pour les
+confirmations de nouvelle partie, sans dependance de production supplementaire.
 
 Le moteur fourni est partage entre navigateur et serveur. Deux corrections
 concernent les cas limites locaux : appliquer la limite des 200 coups aux tours
@@ -132,7 +148,8 @@ injection de score ignoree, trois participants, course aux boutons Pret,
 reservation annulee, lancement admin, spectateurs presents ou arrives en cours
 de partie, revanche a deux accords, alternance sur trois matchs, partie gagnante,
 match nul, deconnexion, succession du createur, isolation et conservation des
-statistiques. Les tests SQLite couvrent
+statistiques, annulation admin confirmee pendant un match et refus des annulations
+sans confirmation ou pour une ancienne partie. Les tests SQLite couvrent
 les cumuls, le minimum, les captures/pertes, les doubles enregistrements, les
 transactions concurrentes, le rollback et la reouverture de la base.
 

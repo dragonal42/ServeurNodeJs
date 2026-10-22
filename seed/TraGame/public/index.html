@@ -52,6 +52,26 @@
     aside { width: 280px; flex: none; max-height: calc(100dvh - 16px); }
   }
   @media (pointer: coarse) { button, select, input { min-height: 36px; } }
+  main { padding-right: 56px; }
+  #togglePanel { position: fixed; right: 8px; top: 50%; transform: translateY(-50%); z-index: 50;
+    width: 38px; height: 64px; border: 1px solid var(--scene); border-radius: 16px;
+    background: var(--panel); color: var(--fg); font-size: 28px; cursor: pointer; box-shadow: 0 3px 14px #0002; }
+  body.panel-collapsed #gamePanel { display: none; }
+  .rules { margin: 0 16px 32px; padding: clamp(16px, 3vw, 32px); background: var(--panel); border-radius: 16px; }
+  .rules h2 { margin-top: 0; font-size: 26px; }
+  .rules-intro { font-size: 18px; max-width: 800px; }
+  .rule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+  .rule-card { border: 1px solid var(--scene); border-radius: 14px; padding: 18px; background: var(--log); }
+  .rule-card h3 { margin: 0 0 10px; font-size: 19px; }
+  .rule-card { border-top: 4px solid #4274c5; }
+  .rule-card:nth-child(2), .rule-card:nth-child(5) { border-top-color: #399665; }
+  .rule-card:nth-child(3), .rule-card:nth-child(6) { border-top-color: #d99928; }
+  .rule-card p { margin: 8px 0; }
+  .unit { display: flex; gap: 12px; align-items: center; margin: 14px 0; }
+  .unit-icon { font-size: 34px; color: var(--blue); min-width: 40px; text-align: center; }
+  .rule-formula { padding: 10px; border-radius: 8px; background: var(--panel); font-weight: 600; }
+  .rule-tip { border-left: 4px solid #d99928; padding-left: 12px; }
+  .swal2-popup { background: var(--panel); color: var(--fg); }
 </style>
 <script type="importmap">
 { "imports": {
@@ -61,12 +81,14 @@
 </script>
 </head>
 <body>
+<button id="togglePanel" type="button" aria-controls="gamePanel" aria-expanded="true"
+  aria-label="Masquer le panneau droit" title="Masquer le panneau droit">›</button>
 <main>
   <div id="view">
     <div id="help"><span class="mouse">Clic gauche : choisir / tourner · Molette : zoom · Clic droit : déplacer</span><span class="touch">Toucher : choisir · Glisser : tourner · 2 doigts : zoom / déplacer</span></div>
     <div id="hover"></div>
   </div>
-  <aside>
+  <aside id="gamePanel" aria-label="Panneau de jeu">
     <h1>TraGame - Traversal</h1>
     <p><a href="/">Accueil des jeux</a></p>
     <label>Pseudo : <input id="pseudo" maxlength="30" autocomplete="nickname"></label><br>
@@ -77,7 +99,7 @@
       <button id="ready">Prêt</button>
       <button id="launch">Lancer le match</button>
       <button id="rematch">Revanche</button>
-      <button id="resetDuel">Choisir un autre adversaire</button>
+      <button id="resetDuel">Nouvelle partie</button>
       <button id="practice">Jouer contre le bot en attendant</button>
     </section>
     <label>Camp en local : <select id="side"><option value="1">Rouge (commence)</option><option value="2">Bleu</option></select></label><br>
@@ -91,13 +113,6 @@
     <div id="terrainInfo"></div>
     <div>Score - <span class="p1">Rouge <b id="s1">0</b></span> · <span class="p2">Bleu <b id="s2">0</b></span> · Coup <b id="mc">0</b>/200</div>
     <div id="log"></div>
-    <details><summary>Règles express</summary>
-      <p>⬟ Explorateur - cône à 5 faces (mvt 5, force 1) · ◆ Avant-garde - coin (4, 2) · ▲ Sentinelle - prisme (3, 3).</p>
-      <p>Déplacement orthogonal ; coût = |Δhauteur| + 1. On ne traverse aucune pièce. L'explorateur peut à la place faire 1 pas en diagonale ou bondir de 2 cases tout droit, sans coût de hauteur.</p>
-      <p>Attaque : force + 1 si on est plus haut (−1 si plus bas) + force de base de chaque allié adjacent à la cible. Défense : force + 1 par allié adjacent. Capture si attaque ≥ défense. Avant-garde +1 si elle doit utiliser ses 4 points.</p>
-      <p>Sortir par le bord adverse (depuis la dernière rangée avec ≥ 1 point restant) rapporte la force de la pièce. Fin dès que 2 pièces sont sorties. Une Sentinelle sortie en premier gagne immédiatement.</p>
-      <p>Survolez une cible rouge pour voir le calcul du combat.</p>
-    </details>
   </aside>
 </main>
 <section class="records" aria-labelledby="recordsTitle">
@@ -118,9 +133,61 @@
   <p id="scoresStatus" role="status"></p>
   <div id="leaderboard" aria-label="Classement des joueurs"></div>
 </section>
+<section class="rules" aria-labelledby="rulesTitle">
+  <h2 id="rulesTitle">À l’assaut du relief !</h2>
+  <p class="rules-intro">Deux équipes, six pièces chacune et un plateau qui monte et qui descend.
+    Traversez le terrain pour sortir par le bord adverse. Rouge joue en premier ; à la revanche, on échange les camps !</p>
+  <div class="rule-grid">
+    <article class="rule-card">
+      <h3>1. Votre petite escouade</h3>
+      <div class="unit"><span class="unit-icon" aria-hidden="true">⬟</span><div><strong>L’explorateur</strong><br>5 points de mouvement · force 1<br>Le spécialiste des diagonales et des bonds.</div></div>
+      <div class="unit"><span class="unit-icon" aria-hidden="true">◆</span><div><strong>L’avant-garde</strong><br>4 points de mouvement · force 2<br>+1 en attaque si elle utilise ses 4 points.</div></div>
+      <div class="unit"><span class="unit-icon" aria-hidden="true">▲</span><div><strong>La sentinelle</strong><br>3 points de mouvement · force 3<br>Si elle sort la première, c’est gagné !</div></div>
+      <p>Vous avez deux pièces de chaque type. À votre tour, sélectionnez une pièce puis une destination proposée.</p>
+    </article>
+    <article class="rule-card">
+      <h3>2. La montagne, ça se mérite</h3>
+      <p>Avancez horizontalement ou verticalement. Un trajet peut tourner, mais il ne traverse aucune pièce.</p>
+      <p class="rule-formula">Coût d’un pas = 1 + l’écart de hauteur</p>
+      <p>Une case au même niveau coûte 1 point. Monter ou descendre de 2 niveaux coûte 3 points.</p>
+      <p class="rule-tip">L’explorateur peut, à la place, faire un pas en diagonale ou un bond de deux cases en ligne droite, sans coût de hauteur. Pour un bond, la case du milieu doit être libre.</p>
+    </article>
+    <article class="rule-card">
+      <h3>3. À plusieurs, on est plus costauds</h3>
+      <p class="rule-formula">Capture si attaque ≥ défense</p>
+      <p><strong>Attaque :</strong> force de votre pièce, +1 si elle part de plus haut, −1 si elle part de plus bas.
+        Ajoutez la force de base de vos alliés voisins de la cible, sur les quatre côtés.</p>
+      <p><strong>Défense :</strong> force de la cible, +1 par allié qui la touche sur un côté.</p>
+      <p>L’avant-garde gagne encore +1 si son attaque exige ses 4 points de mouvement.</p>
+      <p class="rule-tip">Survolez une cible de capture : le jeu vous montre le calcul avant de vous lancer.</p>
+    </article>
+    <article class="rule-card">
+      <h3>4. La grande évasion</h3>
+      <p>Rejoignez le bord adverse, puis franchissez la sortie. Une sortie normale demande encore au moins 1 point de mouvement depuis la dernière rangée.</p>
+      <p>Une pièce sortie rapporte sa force : explorateur 1, avant-garde 2, sentinelle 3.</p>
+      <p class="rule-formula">Sentinelle sortie en premier = victoire immédiate</p>
+      <p>Sinon, la partie s’arrête dès que deux pièces au total sont sorties : le plus de points gagne, avec match nul à égalité.</p>
+      <p>L’explorateur peut aussi franchir le bord adverse avec sa diagonale ou son bond spécial.</p>
+    </article>
+    <article class="rule-card">
+      <h3>5. Et si personne ne passe ?</h3>
+      <p>Aucun coup possible ? Le tour est passé automatiquement. Trois fois la même position avec le même camp au trait donnent un match nul.</p>
+      <p>À 200 coups, les points départagent les équipes. À égalité, on regarde la pièce active la plus proche de sa sortie, puis sa force. Encore à égalité ? Match nul.</p>
+      <p>Si un camp n’a plus de pièce active, c’est la domination totale : chaque camp ajoute la force de sa meilleure pièce encore active à ses points, puis on compare.</p>
+    </article>
+    <article class="rule-card">
+      <h3>6. Place au prochain duel</h3>
+      <p>Le premier joueur <strong>Prêt</strong> affronte l’admin, qui lance le match. Les autres regardent ou s’entraînent contre le bot.</p>
+      <p>Les paramètres restent verrouillés pendant la partie. Pour annuler le duel, l’admin choisit <strong>Nouvelle partie</strong> et confirme la fenêtre d’avertissement.</p>
+      <p>La revanche demande l’accord des deux joueurs. Les camps s’inversent pour que chacun commence à son tour.</p>
+      <p class="rule-tip">Les records comptent les victoires en ligne et vos statistiques de parties terminées. Un duel annulé et un entraînement contre le bot ne comptent pas.</p>
+    </article>
+  </div>
+</section>
 <script src="engine.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="vendor/tabulator.min.js"></script>
+<script src="vendor/sweetalert2.all.min.js"></script>
 <script type="module" src="game.js"></script>
 </body>
 </html>

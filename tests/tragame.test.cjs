@@ -105,7 +105,7 @@ test('actual multi-site server: routes, rooms, legal moves, isolation and persis
     assert(health, output);
     assert(health.sites.some(site => site.nom === 'TraGame' && site.statut === 'ok'), output);
     assert(health.sites.some(site => site.nom === 'courseetoile' && site.statut === 'ok'), output);
-    for (const file of ['', 'game.js', 'engine.js', 'ai-worker.js', 'vendor/three.module.js', 'vendor/OrbitControls.js', 'vendor/tabulator.min.js', 'vendor/tabulator.min.css', 'leaderboard']) {
+    for (const file of ['', 'game.js', 'engine.js', 'ai-worker.js', 'vendor/three.module.js', 'vendor/OrbitControls.js', 'vendor/tabulator.min.js', 'vendor/tabulator.min.css', 'vendor/sweetalert2.all.min.js', 'leaderboard']) {
       assert.equal((await fetch(`${base}/TraGame/${file}`)).status, 200, file);
     }
     for (const file of ['api.js', 'scores.js', '../data/tragame-scores.db'])
@@ -242,16 +242,33 @@ test('actual multi-site server: routes, rooms, legal moves, isolation and persis
     assert.equal(afterCapture.length, 2);
 
     // The admin can choose a new opponent after the match, and only the first ready player gets the place.
-    assert.equal((await send(alice, 'room:reset', {})).ok, true);
+    assert.equal((await send(alice, 'room:reset', { confirmed: true, gameId: alice.latest.gameId })).ok, true);
     await until(() => alice.latest.phase === 'lobby');
     assert.equal((await send(third, 'room:ready', {})).ok, true);
     assert((await send(bob, 'room:ready', {})).error);
     await send(alice, 'game:start', { terrain: 'hell' });
     await until(() => alice.latest.phase === 'playing' && third.latest.phase === 'playing');
     const inProgress = alice.latest.gameId;
+    assert((await send(bob, 'room:reset', { confirmed: true, gameId: inProgress })).error);
+    assert((await send(alice, 'room:reset', { gameId: inProgress })).error);
+    assert((await send(alice, 'room:reset', { confirmed: true, gameId: 'obsolete' })).error);
+    assert.equal((await send(alice, 'room:reset', { confirmed: true, gameId: inProgress })).ok, true);
+    await until(() => alice.latest.phase === 'lobby' && third.latest.phase === 'lobby');
+    assert.equal(alice.latest.gameId, null);
+    assert.equal(alice.latest.state, null);
+    assert.equal(alice.latest.challengerId, null);
+    assert.equal(alice.latest.duelIds.length, 0);
+    assert.equal(alice.latest.rematchReady.length, 0);
+    assert.deepEqual(await (await fetch(`${base}/TraGame/leaderboard`)).json(), afterCapture);
+    await send(third, 'room:ready', {});
+    await send(alice, 'game:start', { terrain: 'hell' });
+    await until(() => alice.latest.phase === 'playing' && third.latest.phase === 'playing');
+    assert.notEqual(alice.latest.gameId, inProgress);
+    assert((await send(alice, 'room:reset', { confirmed: true, gameId: inProgress })).error);
+    const restarted = alice.latest.gameId;
     bob.disconnect(); // Now a spectator: its departure must not stop the duel.
     await until(() => alice.latest.players.length === 2);
-    assert.equal(alice.latest.gameId, inProgress);
+    assert.equal(alice.latest.gameId, restarted);
     assert.equal(alice.latest.phase, 'playing');
     third.disconnect(); // An active player leaves: return to the lobby without recording an unfinished game.
     await until(() => alice.latest.phase === 'lobby');

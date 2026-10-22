@@ -10,6 +10,27 @@ const siteBase = new URL('.', location.href);
 let gameId = null, revision = 0, hostId = null, pendingMove = false, session = 0;
 let practice = false, latestRoom = null, viewEpoch = 0;
 const onlineView = () => !!net && !practice;
+let localLocked = false, frozenSettings = null, localSetup = true;
+const localParametersLocked = () => localLocked && !state.gameOver;
+function lockLocalSettings() {
+  if (!onlineView() && !localLocked) {
+    localLocked = true;
+    frozenSettings = Object.fromEntries(['side', 'terrain', 'level'].map(id => [id, $(id).value]));
+  }
+}
+function setPanelCollapsed(collapsed) {
+  document.body.classList.toggle('panel-collapsed', collapsed);
+  $('togglePanel').setAttribute('aria-expanded', String(!collapsed));
+  const label = collapsed ? 'Afficher le panneau droit' : 'Masquer le panneau droit';
+  $('togglePanel').setAttribute('aria-label', label);
+  $('togglePanel').title = label;
+  $('togglePanel').textContent = collapsed ? '‹' : '›';
+  try { localStorage.setItem('tragame:panelCollapsed', collapsed ? '1' : '0'); } catch { }
+}
+let panelInitiallyCollapsed = false;
+try { panelInitiallyCollapsed = localStorage.getItem('tragame:panelCollapsed') === '1'; } catch { }
+setPanelCollapsed(panelInitiallyCollapsed);
+$('togglePanel').onclick = () => setPanelCollapsed(!document.body.classList.contains('panel-collapsed'));
 try { $('pseudo').value = localStorage.getItem('tragame:pseudo') || ''; } catch { }
 
 // ---------- Scène ----------
@@ -295,6 +316,7 @@ const fireworks = player => { for (let i = 0; i < 10; i++) setTimeout(burst, i *
 // ---------- Partie ----------
 function start({ board, terrain } = generateBoard($('terrain').value)) {
   viewEpoch++;
+  localLocked = false; frozenSettings = null;
   human = onlineView() ? (seat || 1) : +$('side').value;
   state = newGame(board);
   $('terrainInfo').textContent = `Terrain : ${TERRAINS[terrain][0]}`;
@@ -303,6 +325,7 @@ function start({ board, terrain } = generateBoard($('terrain').value)) {
   buildTerrain();
   buildPieces();
   recenter();
+  if (!onlineView() && !localSetup) lockLocalSettings();
   render();
   maybeAI();
 }
@@ -319,6 +342,7 @@ function describe(s, m) {
 }
 
 async function play(m) {
+  lockLocalSettings();
   const game = state;
   animating = true; selected = null; render();
   await animateMove(m);
@@ -363,7 +387,8 @@ function think(s, depth, done) {
 }
 
 function maybeAI() {
-  if (pvp || onlineView() || state.gameOver || state.turn === human) return;
+  if (pvp || onlineView() || localSetup || state.gameOver || state.turn === human) return;
+  lockLocalSettings();
   thinking = true; render();
   const game = state;
   think(state, +$('level').value, m => {
@@ -401,23 +426,25 @@ function render() {
   $('s1').textContent = state.scores[0]; $('s2').textContent = state.scores[1]; $('mc').textContent = state.moveCount;
   $('undo').disabled = onlineView() || thinking || animating || !history.length;
   $('new').hidden = onlineView();
-  $('new').textContent = practice ? 'Nouvel entraînement' : 'Nouvelle partie';
-  $('side').disabled = onlineView();
-  $('terrain').disabled = onlineView() && (net.id !== hostId || latestRoom?.phase === 'playing');
-  $('level').disabled = onlineView() || pvp;
-  $('pvp').disabled = !!net;
+  $('new').textContent = localSetup ? 'Démarrer la partie' : (practice ? 'Nouvel entraînement' : 'Nouvelle partie');
+  $('side').disabled = onlineView() || localParametersLocked();
+  $('terrain').disabled = onlineView() ? (net.id !== hostId || latestRoom?.phase === 'playing') : localParametersLocked();
+  $('level').disabled = onlineView() || pvp || localParametersLocked();
+  $('pvp').disabled = !!net || localParametersLocked();
   $('pseudo').disabled = !!net;
   $('room').disabled = !!net;
   renderLobby();
   const col = pl => `<span class="p${pl}">${pl === 1 ? 'Rouge' : 'Bleu'}</span>`;
   $('status').innerHTML = state.gameOver
     ? (state.winner ? `${col(state.winner)} gagne ${state.winner === human && (!onlineView() || seat) ? '🎉' : ''}` : 'Match nul') + ` - ${state.reason}`
+    : !onlineView() && localSetup ? 'Choisissez vos paramètres, puis démarrez la partie.'
     : onlineView() && latestRoom?.phase !== 'playing' ? 'En attente du lancement par l’admin.'
     : onlineView() && !seat ? `Spectateur : au tour de ${col(state.turn)}.`
     : thinking ? 'L’IA réfléchit…' : state.turn !== human ? `Au tour de l’adversaire (${col(state.turn)})…` : `À vous (${col(human)}) : choisissez une pièce.`;
 }
 
 function click(r, c) {
+  if (!onlineView() && localSetup) return;
   if (state.gameOver || state.turn !== human || thinking || animating || pendingMove ||
     (onlineView() && (!seat || latestRoom?.phase !== 'playing' || !gameId))) return;
   const target = currentTargets().find(m => m.r === r && m.c === c);
@@ -493,12 +520,22 @@ $('musicVol').oninput = e => {
   if (musicOut && musicOn) musicOut.gain.setTargetAtTime(musicVol, actx.currentTime, 0.05);
 };
 setMusic(musicOn);
-$('new').onclick = () => {
-  thinking = false;
-  if (!onlineView()) return start();
+$('new').onclick = async () => {
+  if (onlineView()) return;
+  if (localSetup) { localSetup = false; start(); return; }
+  const epoch = viewEpoch;
+  if (localParametersLocked()) {
+    const answer = await Swal.fire({
+      titleText: 'Annuler cet entraînement ?', text: 'La partie en cours sera abandonnée. Vous pourrez ensuite modifier les paramètres.',
+      icon: 'warning', showCancelButton: true, confirmButtonText: 'Oui, nouvelle partie', cancelButtonText: 'Continuer à jouer',
+      focusCancel: true, reverseButtons: true, heightAuto: false
+    });
+    if (!answer.isConfirmed || epoch !== viewEpoch) return;
+  }
+  localSetup = true; start();
 };
 const pvpLabel = () => { $('pvp').textContent = pvp ? '🤖 Jouer contre l’IA' : '👥 Jouer à 2'; };
-$('pvp').onclick = () => { leaveRoom(); pvp = !pvp; pvpLabel(); $('new').onclick(); };
+$('pvp').onclick = () => { if (net || localParametersLocked()) return; pvp = !pvp; pvpLabel(); start(); };
 pvpLabel();
 
 // ---------- Salle : duel reserve, spectateurs et entrainement independant ----------
@@ -535,7 +572,7 @@ function renderLobby() {
   $('rematch').hidden = room.phase !== 'finished' || !inDuel;
   $('rematch').disabled = room.rematchReady.includes(net.id);
   $('rematch').textContent = room.rematchReady.includes(net.id) ? 'Revanche demandée' : 'Revanche';
-  $('resetDuel').hidden = !isAdmin || !['ready', 'finished'].includes(room.phase);
+  $('resetDuel').hidden = !isAdmin;
   $('practice').disabled = room.phase === 'playing' && inDuel;
   $('practice').textContent = practice ? 'Voir le match / la salle' : 'Jouer contre le bot en attendant';
 }
@@ -544,6 +581,7 @@ function leaveRoom() {
   if (!net) return;
   const old = net;
   session++; viewEpoch++; net = null; latestRoom = null; practice = false;
+  localSetup = true;
   opponent = false; gameId = null; pendingMove = false; seat = 0;
   old.disconnect(); onlineLabel();
   $('networkStatus').textContent = 'Entraînement local, hors classement.';
@@ -620,12 +658,26 @@ $('ready').onclick = () => sendAction('room:ready', { ready: latestRoom?.challen
 });
 $('launch').onclick = () => sendAction('game:start', { terrain: $('terrain').value });
 $('rematch').onclick = () => sendAction('game:rematch', { gameId: latestRoom?.gameId });
-$('resetDuel').onclick = () => sendAction('room:reset', {});
+$('resetDuel').onclick = async () => {
+  if (!net || latestRoom?.hostId !== net.id) return;
+  const connection = net, match = latestRoom.gameId;
+  const active = latestRoom.phase === 'playing';
+  const answer = await Swal.fire({
+    titleText: active ? 'Annuler le match en cours ?' : 'Repartir sur une nouvelle partie ?',
+    text: 'Le plateau et la sélection des joueurs seront réinitialisés. Le match en cours ne comptera pas dans les statistiques. Les records déjà enregistrés sont conservés.',
+    icon: 'warning', showCancelButton: true, confirmButtonText: active ? 'Oui, annuler le match' : 'Oui, nouvelle partie',
+    cancelButtonText: active ? 'Continuer le match' : 'Garder la salle', focusCancel: true, reverseButtons: true, heightAuto: false
+  });
+  if (!answer.isConfirmed || net !== connection) return;
+  sendAction('room:reset', { confirmed: true, gameId: match }, response => {
+    if (response?.ok && practice) showMatch();
+  });
+};
 $('practice').onclick = () => {
   if (!net) return;
   if (practice) return showMatch();
   if (latestRoom?.phase === 'playing' && latestRoom.duelIds.includes(net.id)) return;
-  practice = true; viewEpoch++; pvp = false; selected = null;
+  practice = true; viewEpoch++; pvp = false; selected = null; localSetup = true;
   start();
 };
 
@@ -667,8 +719,16 @@ $('online').onclick = () => {
   connection.connect(); onlineLabel();
 };
 onlineLabel();
-$('side').onchange = () => { if (!onlineView()) start(); };
-$('terrain').onchange = () => { if (!onlineView()) start(); };
+for (const id of ['side', 'terrain', 'level']) $(id).onchange = () => {
+  if (onlineView()) {
+    if (id === 'terrain' && latestRoom?.phase !== 'playing' && net.id === hostId) return;
+    if (id === 'terrain' && latestRoom?.state) $('terrain').value = latestRoom.terrain;
+    if (id === 'side') $('side').value = human;
+    return;
+  }
+  if (localParametersLocked()) { $(id).value = frozenSettings[id]; return; }
+  if (id !== 'level') start();
+};
 
 // Tableau local : aucune dependance a un CDN, memes tris apres actualisation.
 let statsTable = null;
