@@ -8,6 +8,8 @@ const UNIT = 0.45, BASE = 0.3, HALF = (SIZE - 1) / 2;
 let pvp = false, net = null, seat, opponent, busy = Promise.resolve(), state, human, history, positions, selected, lastMove, thinking, animating;
 const siteBase = new URL('.', location.href);
 let gameId = null, revision = 0, hostId = null, pendingMove = false, session = 0;
+let practice = false, latestRoom = null, viewEpoch = 0;
+const onlineView = () => !!net && !practice;
 try { $('pseudo').value = localStorage.getItem('tragame:pseudo') || ''; } catch { }
 
 // ---------- Scène ----------
@@ -292,7 +294,8 @@ const fireworks = player => { for (let i = 0; i < 10; i++) setTimeout(burst, i *
 
 // ---------- Partie ----------
 function start({ board, terrain } = generateBoard($('terrain').value)) {
-  human = net ? seat : +$('side').value;
+  viewEpoch++;
+  human = onlineView() ? (seat || 1) : +$('side').value;
   state = newGame(board);
   $('terrainInfo').textContent = `Terrain : ${TERRAINS[terrain][0]}`;
   history = []; positions = [positionKey(state)]; selected = null; lastMove = null; animating = false; thinking = false;
@@ -360,7 +363,7 @@ function think(s, depth, done) {
 }
 
 function maybeAI() {
-  if (pvp || net || state.gameOver || state.turn === human) return;
+  if (pvp || onlineView() || state.gameOver || state.turn === human) return;
   thinking = true; render();
   const game = state;
   think(state, +$('level').value, m => {
@@ -396,25 +399,30 @@ function render() {
   if (lastMove && !lastMove.exit && !animating) markerGroup.add(mesh(lastGeo, lastMat, X(lastMove.c), top(lastMove.r, lastMove.c) + 0.015, Z(lastMove.r), { r: lastMove.r, c: lastMove.c }));
 
   $('s1').textContent = state.scores[0]; $('s2').textContent = state.scores[1]; $('mc').textContent = state.moveCount;
-  $('undo').disabled = !!net || thinking || animating || !history.length;
-  $('new').disabled = !!net && (!opponent || net.id !== hostId);
-  $('side').disabled = !!net;
-  $('terrain').disabled = !!net && net.id !== hostId;
-  $('level').disabled = !!net || pvp;
+  $('undo').disabled = onlineView() || thinking || animating || !history.length;
+  $('new').hidden = onlineView();
+  $('new').textContent = practice ? 'Nouvel entraînement' : 'Nouvelle partie';
+  $('side').disabled = onlineView();
+  $('terrain').disabled = onlineView() && (net.id !== hostId || latestRoom?.phase === 'playing');
+  $('level').disabled = onlineView() || pvp;
+  $('pvp').disabled = !!net;
   $('pseudo').disabled = !!net;
   $('room').disabled = !!net;
+  renderLobby();
   const col = pl => `<span class="p${pl}">${pl === 1 ? 'Rouge' : 'Bleu'}</span>`;
   $('status').innerHTML = state.gameOver
-    ? (state.winner ? `${col(state.winner)} gagne ${state.winner === human ? '🎉' : ''}` : 'Match nul') + ` - ${state.reason}`
-    : net && !opponent ? `Salle ${$('room').value} : en attente de l’adversaire…`
+    ? (state.winner ? `${col(state.winner)} gagne ${state.winner === human && (!onlineView() || seat) ? '🎉' : ''}` : 'Match nul') + ` - ${state.reason}`
+    : onlineView() && latestRoom?.phase !== 'playing' ? 'En attente du lancement par l’admin.'
+    : onlineView() && !seat ? `Spectateur : au tour de ${col(state.turn)}.`
     : thinking ? 'L’IA réfléchit…' : state.turn !== human ? `Au tour de l’adversaire (${col(state.turn)})…` : `À vous (${col(human)}) : choisissez une pièce.`;
 }
 
 function click(r, c) {
-  if (state.gameOver || state.turn !== human || thinking || animating || pendingMove || (net && (!opponent || !gameId))) return;
+  if (state.gameOver || state.turn !== human || thinking || animating || pendingMove ||
+    (onlineView() && (!seat || latestRoom?.phase !== 'playing' || !gameId))) return;
   const target = currentTargets().find(m => m.r === r && m.c === c);
   if (target) {
-    if (net) {
+    if (onlineView()) {
       pendingMove = true;
       sendAction('game:move', { gameId, revision, id: target.id, r: target.r, c: target.c }, () => { pendingMove = false; });
       return;
@@ -463,7 +471,7 @@ function hover(e) {
 }
 
 $('undo').onclick = () => {
-  if (net || thinking || animating || !history.length) return;
+  if (onlineView() || thinking || animating || !history.length) return;
   const h = history.pop();
   ({ state, positions } = h);
   $('log').innerHTML = h.log;
@@ -487,19 +495,56 @@ $('musicVol').oninput = e => {
 setMusic(musicOn);
 $('new').onclick = () => {
   thinking = false;
-  if (!net) return start();
-  sendAction('game:start', { terrain: $('terrain').value });
+  if (!onlineView()) return start();
 };
 const pvpLabel = () => { $('pvp').textContent = pvp ? '🤖 Jouer contre l’IA' : '👥 Jouer à 2'; };
 $('pvp').onclick = () => { leaveRoom(); pvp = !pvp; pvpLabel(); $('new').onclick(); };
 pvpLabel();
 
-// ---------- En ligne : coups et etats valides par le serveur ----------
-const onlineLabel = () => { $('online').textContent = net ? 'Quitter la salle' : 'Jouer en ligne'; };
+// ---------- Salle : duel reserve, spectateurs et entrainement independant ----------
+const onlineLabel = () => { $('online').textContent = net ? 'Quitter la salle' : 'Rejoindre la salle'; };
+
+function renderLobby() {
+  $('lobby').hidden = !net;
+  if (!net || !latestRoom) return;
+  const room = latestRoom;
+  const admin = room.players.find(p => p.id === room.hostId);
+  const challenger = room.players.find(p => p.id === room.challengerId);
+  const isAdmin = net.id === room.hostId;
+  const inDuel = room.duelIds.includes(net.id);
+  const chosen = room.challengerId === net.id;
+  $('networkStatus').textContent = `Salle ${room.room}${practice ? ' - entraînement local contre le bot' : ''}`;
+  const messages = {
+    lobby: `Admin : ${admin?.pseudo || ''}. Le premier joueur prêt réserve la place adverse.`,
+    ready: `${admin?.pseudo || ''} contre ${challenger?.pseudo || ''} : duel réservé. L’admin peut lancer. ${room.nextHostSeat === 1 ? admin?.pseudo : challenger?.pseudo} commencera.`,
+    playing: `Match en cours : ${room.players.find(p => p.seat === 1)?.pseudo || ''} (Rouge) contre ${room.players.find(p => p.seat === 2)?.pseudo || ''} (Bleu).`,
+    finished: `Match terminé. Revanche : ${room.rematchReady.length}/2 accords.${room.ranked ? ' Statistiques enregistrées.' : ''}`
+  };
+  $('lobbyStatus').textContent = messages[room.phase];
+  $('members').replaceChildren(...room.players.map(player => {
+    const li = document.createElement('li');
+    const role = player.seat ? (player.seat === 1 ? 'Rouge' : 'Bleu') : (player.id === room.hostId ? 'En attente' : 'Spectateur');
+    li.textContent = `${player.pseudo} : ${player.id === room.hostId ? 'Admin - ' : ''}${role}${room.rematchReady.includes(player.id) ? ' - revanche acceptée' : ''}`;
+    return li;
+  }));
+  $('ready').hidden = isAdmin || !['lobby', 'ready'].includes(room.phase);
+  $('ready').disabled = !!room.challengerId && !chosen;
+  $('ready').textContent = chosen ? 'Annuler prêt' : 'Prêt';
+  $('launch').hidden = !isAdmin;
+  $('launch').disabled = room.phase !== 'ready';
+  $('rematch').hidden = room.phase !== 'finished' || !inDuel;
+  $('rematch').disabled = room.rematchReady.includes(net.id);
+  $('rematch').textContent = room.rematchReady.includes(net.id) ? 'Revanche demandée' : 'Revanche';
+  $('resetDuel').hidden = !isAdmin || !['ready', 'finished'].includes(room.phase);
+  $('practice').disabled = room.phase === 'playing' && inDuel;
+  $('practice').textContent = practice ? 'Voir le match / la salle' : 'Jouer contre le bot en attendant';
+}
+
 function leaveRoom() {
   if (!net) return;
   const old = net;
-  session++; net = null; opponent = false; gameId = null; pendingMove = false;
+  session++; viewEpoch++; net = null; latestRoom = null; practice = false;
+  opponent = false; gameId = null; pendingMove = false; seat = 0;
   old.disconnect(); onlineLabel();
   $('networkStatus').textContent = 'Entraînement local, hors classement.';
 }
@@ -514,30 +559,49 @@ function sendAction(event, data, done = () => {}) {
   });
 }
 
+function showMatch() {
+  if (!net) return;
+  practice = false; viewEpoch++; gameId = null; selected = null;
+  if (latestRoom) busy = busy.then(() => receiveState(latestRoom, session));
+}
+
 async function receiveState(msg, generation) {
   if (!net || generation !== session) return;
   hostId = msg.hostId;
   const me = msg.players.find(p => p.id === net.id);
   if (!me) return;
-  seat = human = me.seat;
-  $('side').value = seat;
+  seat = me.seat;
+  if (practice && msg.phase === 'playing' && msg.duelIds.includes(net.id)) {
+    // Un lancement par l'admin ramene automatiquement les deux joueurs au duel.
+    practice = false; viewEpoch++; gameId = null;
+  }
+  renderLobby();
+  if (practice) { render(); return; }
+  human = seat || 1;
   $('room').value = msg.room;
-  opponent = msg.players.length === 2;
-  const names = msg.players.map(p => `${p.pseudo} (${p.seat === 1 ? 'Rouge' : 'Bleu'})`).join(' / ');
-  $('networkStatus').textContent = `${msg.room} : ${names}${opponent ? '' : ' - en attente d’un adversaire'}`;
-  if (!msg.state) { gameId = null; start(); return; }
-  $('terrain').value = msg.terrain;
+  opponent = msg.duelIds.length === 2;
+  if (!msg.state) {
+    gameId = null;
+    if (!state || state.moveCount || thinking || animating) start();
+    else render();
+    return;
+  }
   const fresh = gameId !== msg.gameId;
+  if (!fresh && revision === msg.revision) { render(); return; }
+  $('side').value = human;
+  $('terrain').value = msg.terrain;
   if (fresh) {
     start({ board: msg.state.board, terrain: msg.terrain });
     gameId = msg.gameId;
+    for (const [index, move] of msg.history.entries()) log(`${move.ply || index + 1}. ${describe(msg.state, move)}`);
   }
   const wasOver = !fresh && state.gameOver;
   if (msg.move && !fresh) {
+    const epoch = viewEpoch;
     animating = true; selected = null; render();
     const description = describe(state, msg.move);
     await animateMove(msg.move);
-    if (!net || generation !== session) return;
+    if (!net || generation !== session || practice || epoch !== viewEpoch) return;
     log(`${msg.state.moveCount}. ${description}`);
   }
   state = msg.state;
@@ -545,27 +609,39 @@ async function receiveState(msg, generation) {
   lastMove = msg.move || (fresh ? null : lastMove);
   animating = false; thinking = false; selected = null;
   if (state.gameOver && !wasOver && state.winner) {
-    (state.winner === seat ? SFX.win : SFX.lose)();
+    (!seat || state.winner === seat ? SFX.win : SFX.lose)();
     fireworks(state.winner);
   }
-  if (msg.ranked) $('networkStatus').textContent += ' - statistiques enregistrées';
   render();
 }
+
+$('ready').onclick = () => sendAction('room:ready', { ready: latestRoom?.challengerId !== net?.id }, response => {
+  if (response?.ok && practice) showMatch();
+});
+$('launch').onclick = () => sendAction('game:start', { terrain: $('terrain').value });
+$('rematch').onclick = () => sendAction('game:rematch', { gameId: latestRoom?.gameId });
+$('resetDuel').onclick = () => sendAction('room:reset', {});
+$('practice').onclick = () => {
+  if (!net) return;
+  if (practice) return showMatch();
+  if (latestRoom?.phase === 'playing' && latestRoom.duelIds.includes(net.id)) return;
+  practice = true; viewEpoch++; pvp = false; selected = null;
+  start();
+};
 
 $('online').onclick = () => {
   if (net) { leaveRoom(); return start(); }
   const pseudo = $('pseudo').value.trim();
-  if (!pseudo) { $('networkStatus').textContent = 'Indiquez votre pseudo pour jouer en ligne.'; $('pseudo').focus(); return; }
+  if (!pseudo) { $('networkStatus').textContent = 'Indiquez votre pseudo pour rejoindre la salle.'; $('pseudo').focus(); return; }
   try { localStorage.setItem('tragame:pseudo', pseudo); } catch { }
-  pvp = false; pvpLabel();
+  pvp = false; pvpLabel(); practice = false; latestRoom = null;
   const generation = ++session;
   const connection = net = io(siteBase.pathname.replace(/\/$/, ''), { reconnection: false, autoConnect: false });
-  opponent = false; gameId = null; thinking = false; pendingMove = false;
-  // Invalide les recherches IA et animations locales deja en cours.
-  start();
-  busy = Promise.resolve();
+  opponent = false; gameId = null; thinking = false; pendingMove = false; seat = 0;
+  viewEpoch++;
+  start(); busy = Promise.resolve();
   connection.on('connect', () => {
-    sendAction('room:join', { pseudo, room: $('room').value, side: +$('side').value, terrain: $('terrain').value }, response => {
+    sendAction('room:join', { pseudo, room: $('room').value, terrain: $('terrain').value }, response => {
       if (!response || response.error) {
         const message = response?.error || 'Connexion impossible.';
         leaveRoom(); start(); $('networkStatus').textContent = message;
@@ -573,6 +649,9 @@ $('online').onclick = () => {
     });
   });
   connection.on('game:state', msg => {
+    if (net !== connection) return;
+    latestRoom = msg;
+    renderLobby();
     busy = busy.then(() => receiveState(msg, generation)).catch(error => {
       console.error(error); $('networkStatus').textContent = 'Affichage désynchronisé. Rejoignez la salle.';
     });
@@ -585,12 +664,11 @@ $('online').onclick = () => {
   };
   connection.on('connect_error', lost);
   connection.on('disconnect', lost);
-  connection.connect();
-  onlineLabel();
+  connection.connect(); onlineLabel();
 };
 onlineLabel();
-$('side').onchange = () => { if (!net) start(); };
-$('terrain').onchange = () => { if (!net) start(); };
+$('side').onchange = () => { if (!onlineView()) start(); };
+$('terrain').onchange = () => { if (!onlineView()) start(); };
 
 // Tableau local : aucune dependance a un CDN, memes tris apres actualisation.
 let statsTable = null;

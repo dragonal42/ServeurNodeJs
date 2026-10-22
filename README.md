@@ -7,6 +7,9 @@ Le sous-site `seed/TraGame/` ajoute Traversal au framework existant sur
 globales SQLite par pseudo : victoires, parties jouées, déplacements gagnants,
 record minimum, captures et pertes. Le classement Tabulator propose plusieurs
 tris et les médailles des trois premiers en victoires.
+La salle accueille des spectateurs : l'admin affronte le premier joueur prêt,
+puis lance le match. Revanche avec l'accord des deux joueurs, premier joueur
+alterné et entraînement contre un bot pendant l'attente sont disponibles.
 Voir [installation, règles de comptage et tests](seed/TraGame/README.md).
 
 En local : `npm ci`, `npm start`, puis ouvrir `http://localhost:3000/TraGame/`.

@@ -33,13 +33,40 @@ des sources locales. Les modes contre l'IA et a deux sur le meme ecran restent
 des entrainements locaux, hors statistiques. L'IA utilise un Web Worker.
 
 En ligne, saisir un pseudo et creer une salle en laissant son code vide, ou
-rejoindre une salle avec son code. Deux joueurs maximum. Le premier choisit
-le terrain et peut relancer. La partie commence quand le second arrive.
+rejoindre une salle avec son code. La salle accueille jusqu'a 50 participants,
+avec exactement deux joueurs par match et les autres comme spectateurs.
+Le createur de la salle est l'admin et participe au duel.
+
+Le premier autre participant qui clique sur **Pret** reserve la place adverse.
+Le serveur traite les demandes dans leur ordre d'arrivee : une seule place peut
+etre reservee, meme avec plusieurs demandes simultanees. Les autres regardent.
+L'adversaire peut annuler son accord avant le lancement, ce qui libere la place.
+L'admin choisit le terrain et clique sur **Lancer le match**. Ni une arrivee dans
+la salle ni un clic d'un spectateur ne lancent ou ne remplacent un duel.
+
+Les spectateurs voient le plateau courant, les mouvements animes et l'historique,
+y compris en rejoignant un match deja commence. Ils peuvent cliquer sur
+**Jouer contre le bot en attendant**, sans quitter la salle. Leur entrainement
+local ne modifie ni le duel ni ses statistiques. **Voir le match / la salle**
+revient au dernier etat public. Si un joueur du duel s'entrainait avant le
+lancement, il revient automatiquement au match lorsque l'admin le lance.
+
+Apres une partie, **Revanche** demande l'accord des deux joueurs du duel.
+Quand les deux ont accepte, l'admin peut lancer la revanche. L'admin commence
+la premiere partie ; ensuite les camps s'inversent apres chaque partie terminee,
+match nul compris. Rouge commence toujours dans le moteur, mais le joueur Rouge
+change : admin, adversaire, admin, etc. Une partie interrompue ne change pas
+cette alternance. L'admin peut aussi choisir **Choisir un autre adversaire**
+avant un lancement ou apres une fin de partie pour rouvrir la selection.
+
 Le serveur genere le plateau, attribue les camps, valide chaque coup et calcule
 le resultat. Les messages indiquent l'identifiant de partie et sa revision pour
 refuser les coups doubles ou anciens. Le client ne peut pas envoyer de score.
-La perte de connexion interrompt la partie et une nouvelle rencontre recommence
-de zero lorsque la salle est a nouveau complete. Les salles vivent en memoire.
+Le depart d'un spectateur n'interrompt jamais le duel. Si un joueur du duel
+quitte la salle, le match est interrompu et la selection revient au salon,
+sans statistiques pour le match inacheve. Au depart de l'admin, le plus ancien
+participant restant devient admin et une nouvelle selection est necessaire.
+Les salles vivent en memoire.
 
 ## Statistiques et classement global
 
@@ -65,6 +92,8 @@ Les abandons, relances et deconnexions avant la fin ne modifient pas les compteu
 
 Une transaction SQLite inscrit les deux joueurs et memorise l'identifiant de
 partie dans `completed_games` : une meme partie ne peut pas compter deux fois.
+Seuls les deux joueurs du duel sont inscrits : les spectateurs ne recoivent
+aucune victoire, partie jouee, capture ou perte pour ce match.
 Les mises a jour de plusieurs salles sont serialisees et un echec est annule.
 
 `GET /TraGame/leaderboard` retourne tous les joueurs, classes par victoires
@@ -99,8 +128,11 @@ La triple repetition est aussi controlee par le serveur.
 Ces derniers lancent le vrai `seed/server.js` sur un port local temporaire avec
 une copie isolee des fichiers et une base de test sous `tmp/`. Ils utilisent de
 vrais clients Socket.IO et SQLite : routes, salles, camps, coups refuses,
-injection de score ignoree, partie gagnante, match nul, deconnexion, succession
-du createur, isolation et conservation des statistiques. Les tests SQLite couvrent
+injection de score ignoree, trois participants, course aux boutons Pret,
+reservation annulee, lancement admin, spectateurs presents ou arrives en cours
+de partie, revanche a deux accords, alternance sur trois matchs, partie gagnante,
+match nul, deconnexion, succession du createur, isolation et conservation des
+statistiques. Les tests SQLite couvrent
 les cumuls, le minimum, les captures/pertes, les doubles enregistrements, les
 transactions concurrentes, le rollback et la reouverture de la base.
 

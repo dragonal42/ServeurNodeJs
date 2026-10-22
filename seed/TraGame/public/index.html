@@ -26,6 +26,9 @@
   #log { height: 220px; overflow: auto; font-size: 13px; background: var(--log); padding: 6px; border-radius: 6px; }
   button, select { font: inherit; padding: 4px 8px; margin: 2px 0; }
   details { font-size: 13px; margin-top: 10px; }
+  #lobby { border: 1px solid var(--scene); border-radius: 8px; padding: 8px; margin: 8px 0; }
+  #members { padding-left: 18px; font-size: 13px; max-height: 140px; overflow: auto; }
+  #lobbyStatus { font-weight: 600; }
   .records { margin: 0 16px 24px; padding: 16px; border-radius: 12px; background: var(--panel); }
   .records h2 { margin: 0 0 8px; font-size: 20px; }
   .records p { font-size: 14px; }
@@ -68,7 +71,16 @@
     <p><a href="/">Accueil des jeux</a></p>
     <label>Pseudo : <input id="pseudo" maxlength="30" autocomplete="nickname"></label><br>
     <p id="networkStatus" role="status"></p>
-    <label>Je joue : <select id="side"><option value="1">Rouge (commence)</option><option value="2">Bleu</option></select></label><br>
+    <section id="lobby" hidden aria-label="Salle et participants">
+      <div id="lobbyStatus" role="status"></div>
+      <ul id="members"></ul>
+      <button id="ready">Prêt</button>
+      <button id="launch">Lancer le match</button>
+      <button id="rematch">Revanche</button>
+      <button id="resetDuel">Choisir un autre adversaire</button>
+      <button id="practice">Jouer contre le bot en attendant</button>
+    </section>
+    <label>Camp en local : <select id="side"><option value="1">Rouge (commence)</option><option value="2">Bleu</option></select></label><br>
     <label>Terrain : <select id="terrain"><option value="random">Aléatoire</option></select></label><br>
     <label>Niveau : <select id="level"><option value="1">Facile</option><option value="3" selected>Moyen</option><option value="6">Difficile</option></select></label><br>
     <button id="new">Nouvelle partie</button> <button id="pvp"></button><br>

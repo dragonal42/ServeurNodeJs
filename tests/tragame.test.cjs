@@ -114,112 +114,156 @@ test('actual multi-site server: routes, rooms, legal moves, isolation and persis
     assert.equal((await fetch(`${base}/courseetoile/`)).status, 200);
     assert.equal((await fetch(`${base}/TraGame/leaderboard`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pseudo: 'Cheat', best_score: 9999 }) })).status, 404);
 
-    const alice = await connect(), bob = await connect(), other = await connect(), third = await connect();
+    const alice = await connect(), candidateB = await connect(), candidateC = await connect(), other = await connect();
     assert((await send(alice, 'room:join', { pseudo: '', room: 'ROOM1' })).error);
     assert((await send(alice, 'room:join', { pseudo: 'Alice', room: '<script>' })).error);
-    assert.equal((await send(alice, 'room:join', { pseudo: 'Alice', room: 'ROOM1', side: 1, terrain: 'hell' })).seat, 1);
-    assert.equal((await send(bob, 'room:join', { pseudo: 'Bob', room: 'ROOM1', side: 1 })).seat, 2);
-    await until(() => alice.latest?.state && bob.latest?.state);
-    assert((await send(third, 'room:join', { pseudo: 'Third', room: 'ROOM1' })).error);
+    await send(alice, 'room:join', { pseudo: 'Alice', room: 'ROOM1', terrain: 'hell' });
+    await send(candidateB, 'room:join', { pseudo: 'Bob', room: 'ROOM1' });
+    await send(candidateC, 'room:join', { pseudo: 'Third', room: 'ROOM1' });
     await send(other, 'room:join', { pseudo: 'Other', room: 'ROOM2' });
-    await until(() => other.latest);
-    assert.equal(other.latest.state, null);
+    await until(() => alice.latest?.players.length === 3 && other.latest);
+    assert.equal(alice.latest.phase, 'lobby');
+    assert.equal(alice.latest.state, null);
+    assert((await send(alice, 'game:start', { terrain: 'hell' })).error);
+    assert((await send(alice, 'room:ready', {})).error);
+    assert.equal((await send(candidateB, 'room:ready', { ready: true })).ok, true);
+    assert((await send(candidateC, 'room:ready', { ready: true })).error);
+    assert.equal((await send(candidateB, 'room:ready', { ready: false })).ok, true);
+    await until(() => alice.latest.phase === 'lobby');
+    // Two concurrent readiness requests reserve exactly one opponent.
+    const race = await Promise.all([send(candidateB, 'room:ready', { ready: true }), send(candidateC, 'room:ready', { ready: true })]);
+    assert.equal(race.filter(result => result.ok).length, 1);
+    assert.equal(race.filter(result => result.error).length, 1);
+    const bob = race[0].ok ? candidateB : candidateC;
+    const third = race[0].ok ? candidateC : candidateB;
+    const opponentName = race[0].ok ? 'Bob' : 'Third';
+    const spectatorName = race[0].ok ? 'Third' : 'Bob';
+    await until(() => alice.latest.phase === 'ready');
+    assert.equal(alice.latest.challengerId, bob.id);
     assert((await send(bob, 'game:start', { terrain: 'hell' })).error);
+    assert((await send(third, 'room:reset', {})).error);
     assert((await send(alice, 'game:start', { terrain: '__proto__' })).error);
+    assert.equal((await send(alice, 'game:start', { terrain: 'hell' })).ok, true);
+    await until(() => alice.latest?.state && bob.latest?.state && third.latest?.state);
+    assert.deepEqual(alice.latest.duelIds, [alice.id, bob.id]);
+    assert.equal(third.latest.players.find(p => p.id === third.id).seat, 0);
+    assert((await send(alice, 'room:reset', {})).error);
+    assert((await send(alice, 'game:start', { terrain: 'hell' })).error);
     const first = alice.latest;
     const valid = E.legalMoves(first.state)[0];
     assert((await send(bob, 'game:move', { ...valid, gameId: first.gameId, revision: first.revision })).error);
+    assert((await send(third, 'game:move', { ...valid, gameId: first.gameId, revision: first.revision })).error);
     assert((await send(alice, 'game:move', { id: 'p1_2', r: -1, c: 0, gameId: first.gameId, revision: first.revision })).error);
     assert((await send(alice, 'game:move', { ...valid, gameId: 'old-game', revision: first.revision })).error);
+    await delay(1000); // New anti-flood window after the protocol rejection checks.
 
+    async function move(player, id, r, c, extra = {}) {
+      const previous = player.latest;
+      assert.equal((await send(player, 'game:move', { ...extra, id, r, c,
+        gameId: previous.gameId, revision: previous.revision })).ok, true);
+      await until(() => alice.latest.revision > previous.revision && bob.latest.revision === alice.latest.revision && third.latest.revision === alice.latest.revision);
+      await delay(70);
+      return previous;
+    }
     const reds = [[9, 0], [6, 0], [3, 0], [0, 0], [-1, 0]];
     for (let index = 0; index < reds.length; index++) {
-      const previous = alice.latest;
-      const [r, c] = reds[index];
-      const move = { id: 'p1_2', r, c, gameId: previous.gameId, revision: previous.revision,
-        capture: 'p2_2', scores: [9999, 0], winner: 1 };
-      assert.equal((await send(alice, 'game:move', move)).ok, true);
-      await until(() => alice.latest.revision > previous.revision && bob.latest.revision === alice.latest.revision);
+      const previous = await move(alice, 'p1_2', ...reds[index], { capture: 'p2_2', scores: [9999, 0], winner: 1 });
       assert.equal(alice.latest.state.pieces.find(p => p.id === 'p2_2').captured, false);
-      if (index === 0) assert((await send(alice, 'game:move', move)).error);
       assert.equal(other.latest.state, null);
-      if (index < reds.length - 1) {
-        await delay(70);
-        const snapshot = bob.latest;
-        assert.equal((await send(bob, 'game:move', { id: 'p2_7', r: index % 2 ? 2 : 1, c: 7, gameId: snapshot.gameId, revision: snapshot.revision })).ok, true);
-        await until(() => alice.latest.revision > snapshot.revision && bob.latest.revision === alice.latest.revision);
+      assert.equal(third.latest.state.moveCount, alice.latest.state.moveCount);
+      if (index === 0) {
+        assert((await send(alice, 'game:move', { ...valid, gameId: previous.gameId, revision: previous.revision })).error);
+        const late = await connect();
+        await send(late, 'room:join', { pseudo: 'Late spectator', room: 'ROOM1' });
+        await until(() => late.latest?.state && alice.latest.players.length === 4);
+        assert.equal(late.latest.state.moveCount, 1);
+        assert.equal(late.latest.history.length, 1);
+        const beforeLeave = alice.latest;
+        late.disconnect();
+        await until(() => alice.latest.players.length === 3);
+        assert.equal(alice.latest.gameId, beforeLeave.gameId);
+        assert.equal(alice.latest.revision, beforeLeave.revision);
+        assert.equal(alice.latest.phase, 'playing');
       }
-      await delay(70);
+      if (index < reds.length - 1) await move(bob, 'p2_7', index % 2 ? 2 : 1, 7);
     }
     assert.equal(alice.latest.state.gameOver, true);
     assert.equal(alice.latest.state.winner, 1);
-    assert.equal(alice.latest.state.scores[0], 3);
+    assert.equal(alice.latest.phase, 'finished');
     await until(() => alice.latest.ranked);
     const rows = await (await fetch(`${base}/TraGame/leaderboard`)).json();
     assert.deepEqual(rows.map(row => [row.pseudo, row.wins, row.played, row.winning_moves_total, row.best_win_moves, row.captures, row.losses]),
-      [['Alice', 1, 1, 5, 5, 0, 0], ['Bob', 0, 1, 0, null, 0, 0]]);
+      [['Alice', 1, 1, 5, 5, 0, 0], [opponentName, 0, 1, 0, null, 0, 0]]);
+    assert(!rows.some(row => row.pseudo === spectatorName));
 
-    const oldGame = alice.latest.gameId;
-    await send(alice, 'game:start', { terrain: 'hell' });
-    await until(() => alice.latest.gameId !== oldGame);
-    bob.disconnect();
-    await until(() => alice.latest.state === null);
-    assert((await send(alice, 'game:move', { ...valid, gameId: oldGame, revision: 1 })).error);
-    assert.equal((await send(third, 'room:join', { pseudo: 'Third', room: 'ROOM1', side: 1 })).seat, 2);
-    await until(() => alice.latest.state && alice.latest.players.length === 2);
-    assert.equal(alice.latest.state.moveCount, 0);
-    assert.equal(alice.latest.hostId, alice.id);
-    alice.disconnect();
-    await until(() => third.latest.state === null);
-    assert.equal(third.latest.hostId, third.id);
-    const drawOpponent = await connect();
-    await send(drawOpponent, 'room:join', { pseudo: 'Draw', room: 'ROOM1', side: 1 });
-    await until(() => third.latest.state && drawOpponent.latest?.state);
-    for (let step = 0; step < 8; step++) {
-      const player = step % 2 === 0 ? drawOpponent : third;
-      const snapshot = player.latest;
-      const red = player === drawOpponent;
-      const forward = Math.floor(step / 2) % 2 === 0;
-      const response = await send(player, 'game:move', {
-        id: red ? 'p1_2' : 'p2_7', r: red ? (forward ? 8 : 9) : (forward ? 1 : 0), c: red ? 2 : 7,
-        gameId: snapshot.gameId, revision: snapshot.revision
-      });
-      assert.equal(response.ok, true);
-      await until(() => player.latest.revision > snapshot.revision && third.latest.revision === drawOpponent.latest.revision);
-      await delay(70);
+    async function rematch() {
+      const oldGame = alice.latest.gameId;
+      assert((await send(third, 'game:rematch', { gameId: oldGame })).error);
+      assert((await send(alice, 'game:rematch', { gameId: 'old-game' })).error);
+      assert.equal((await send(bob, 'game:rematch', { gameId: oldGame })).ok, true);
+      assert((await send(alice, 'game:start', { terrain: 'hell' })).error);
+      assert.equal((await send(alice, 'game:rematch', { gameId: oldGame })).ok, true);
+      await until(() => alice.latest.phase === 'ready');
+      assert.equal((await send(alice, 'game:start', { terrain: 'hell' })).ok, true);
+      await until(() => alice.latest.gameId !== oldGame && bob.latest.gameId === alice.latest.gameId && third.latest.gameId === alice.latest.gameId);
+      assert((await send(alice, 'game:move', { ...valid, gameId: oldGame, revision: 1 })).error);
     }
-    assert.equal(third.latest.state.winner, 0);
-    assert.equal(third.latest.state.reason, 'Triple repetition');
-    await until(() => third.latest.ranked);
+    await rematch();
+    assert.equal(alice.latest.players.find(p => p.id === alice.id).seat, 2);
+    assert.equal(bob.latest.players.find(p => p.id === bob.id).seat, 1);
+    // Red (the previous challenger) now starts. Both participants get a played game for the draw.
+    for (let step = 0; step < 8; step++) {
+      const red = step % 2 === 0;
+      const forward = Math.floor(step / 2) % 2 === 0;
+      await move(red ? bob : alice, red ? 'p1_2' : 'p2_7', red ? (forward ? 8 : 9) : (forward ? 1 : 0), red ? 2 : 7);
+    }
+    assert.equal(alice.latest.state.winner, 0);
+    assert.equal(alice.latest.state.reason, 'Triple repetition');
+    await until(() => alice.latest.ranked);
     const afterDraw = await (await fetch(`${base}/TraGame/leaderboard`)).json();
-    assert.equal(afterDraw.find(row => row.pseudo === 'Third').played, 1);
-    assert.equal(afterDraw.find(row => row.pseudo === 'Third').wins, 0);
-    assert.equal(afterDraw.find(row => row.pseudo === 'Third').best_win_moves, null);
-    assert.equal(afterDraw.find(row => row.pseudo === 'Alice').played, 1);
-    const drawnGame = third.latest.gameId;
-    await send(third, 'game:start', { terrain: 'hell' });
-    await until(() => third.latest.gameId !== drawnGame && drawOpponent.latest.gameId === third.latest.gameId);
+    assert.equal(afterDraw.find(row => row.pseudo === 'Alice').played, 2);
+    assert.equal(afterDraw.find(row => row.pseudo === opponentName).played, 2);
+    assert.equal(afterDraw.find(row => row.pseudo === opponentName).wins, 0);
+
+    await rematch();
+    assert.equal(alice.latest.players.find(p => p.id === alice.id).seat, 1);
     const attacks = [[6, 2], [5, 2], [4, 2], [3, 2], [3, 0], [0, 0], [-1, 0]];
     const defenders = [[3, 7], [3, 4], [3, 2], [1, 2], [2, 2], [1, 2]];
     for (let index = 0; index < attacks.length; index++) {
-      for (const [player, target, id] of [
-        [drawOpponent, attacks[index], 'p1_2'],
-        ...(defenders[index] ? [[third, defenders[index], index > 2 ? 'p2_2' : 'p2_7']] : [])
-      ]) {
-        const snapshot = player.latest;
-        assert.equal((await send(player, 'game:move', {
-          id, r: target[0], c: target[1], gameId: snapshot.gameId, revision: snapshot.revision
-        })).ok, true);
-        await until(() => player.latest.revision > snapshot.revision && third.latest.revision === drawOpponent.latest.revision);
-        await delay(70);
-      }
+      await move(alice, 'p1_2', ...attacks[index]);
+      if (defenders[index]) await move(bob, index > 2 ? 'p2_2' : 'p2_7', ...defenders[index]);
     }
-    await until(() => drawOpponent.latest.ranked);
+    await until(() => alice.latest.ranked);
     const afterCapture = await (await fetch(`${base}/TraGame/leaderboard`)).json();
-    const attackerStats = afterCapture.find(row => row.pseudo === 'Draw');
-    assert.deepEqual([attackerStats.wins, attackerStats.played, attackerStats.captures, attackerStats.losses, attackerStats.best_win_moves], [1, 2, 1, 0, 7]);
-    const defenderStats = afterCapture.find(row => row.pseudo === 'Third');
-    assert.deepEqual([defenderStats.wins, defenderStats.played, defenderStats.captures, defenderStats.losses, defenderStats.best_win_moves], [0, 2, 0, 1, null]);
+    const attackerStats = afterCapture.find(row => row.pseudo === 'Alice');
+    assert.deepEqual([attackerStats.wins, attackerStats.played, attackerStats.winning_moves_total, attackerStats.captures, attackerStats.losses, attackerStats.best_win_moves], [2, 3, 12, 1, 0, 5]);
+    const defenderStats = afterCapture.find(row => row.pseudo === opponentName);
+    assert.deepEqual([defenderStats.wins, defenderStats.played, defenderStats.captures, defenderStats.losses, defenderStats.best_win_moves], [0, 3, 0, 1, null]);
+    assert.equal(afterCapture.length, 2);
+
+    // The admin can choose a new opponent after the match, and only the first ready player gets the place.
+    assert.equal((await send(alice, 'room:reset', {})).ok, true);
+    await until(() => alice.latest.phase === 'lobby');
+    assert.equal((await send(third, 'room:ready', {})).ok, true);
+    assert((await send(bob, 'room:ready', {})).error);
+    await send(alice, 'game:start', { terrain: 'hell' });
+    await until(() => alice.latest.phase === 'playing' && third.latest.phase === 'playing');
+    const inProgress = alice.latest.gameId;
+    bob.disconnect(); // Now a spectator: its departure must not stop the duel.
+    await until(() => alice.latest.players.length === 2);
+    assert.equal(alice.latest.gameId, inProgress);
+    assert.equal(alice.latest.phase, 'playing');
+    third.disconnect(); // An active player leaves: return to the lobby without recording an unfinished game.
+    await until(() => alice.latest.phase === 'lobby');
+    assert.equal(alice.latest.state, null);
+    const replacement = await connect();
+    await send(replacement, 'room:join', { pseudo: 'Replacement', room: 'ROOM1' });
+    await until(() => replacement.latest?.hostId === alice.id);
+    alice.disconnect();
+    await until(() => replacement.latest.hostId === replacement.id);
+    assert.equal(replacement.latest.phase, 'lobby');
+    assert.equal(replacement.latest.challengerId, null);
+    assert.deepEqual(await (await fetch(`${base}/TraGame/leaderboard`)).json(), afterCapture);
     // The database is outside public and can be reopened independently.
     const persisted = await openScores(path.join(directory, 'data', 'tragame-scores.db'));
     assert.equal((await persisted.list())[0].pseudo, 'Alice');
