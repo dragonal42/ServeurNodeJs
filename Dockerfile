@@ -28,6 +28,8 @@ RUN npm install --omit=dev --no-audit --no-fund \
 
 # Fichiers de départ (amorçage no-clobber, voir entrypoint.sh)
 COPY seed/ /seed/
+RUN test -s /seed/verbes/api.js && test -s /seed/verbes/public/index.html \
+ || (echo 'Sous-module verbes absent : executer git submodule update --init --recursive avant le build.' >&2; exit 1)
 
 # Superviseur (sed : protège contre des fins de ligne Windows)
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
