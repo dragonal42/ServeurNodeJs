@@ -1,5 +1,20 @@
 # billiar-lobby — serveur de jeux multijoueurs (Docker + Dockhand)
 
+## TraGame / Traversal
+
+Le sous-site `seed/TraGame/` ajoute Traversal au framework existant sur
+`/TraGame/`, avec validation serveur des coups par Socket.IO et statistiques
+globales SQLite par pseudo : victoires, parties jouées, déplacements gagnants,
+record minimum, captures et pertes. Le classement Tabulator propose plusieurs
+tris et les médailles des trois premiers en victoires.
+La salle accueille des spectateurs : l'admin affronte le premier joueur prêt,
+puis lance le match. Revanche avec l'accord des deux joueurs, premier joueur
+alterné et entraînement contre un bot pendant l'attente sont disponibles.
+Voir [installation, règles de comptage et tests](seed/TraGame/README.md).
+
+En local : `npm ci`, `npm start`, puis ouvrir `http://localhost:3000/TraGame/`.
+`npm test` lance les vérifications du moteur et du serveur réel.
+
 Fastify + Socket.IO + sqlite3, SFTP avec interface web (SFTPGo), publié
 par Caddy (caddy-docker-proxy, réseau `proxy-net`) sur `multi.billiar.info`. Installation et mises à jour
 **automatiques depuis GitHub via Dockhand**.

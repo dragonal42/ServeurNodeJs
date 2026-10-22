@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraGame - Traversal</title>
+<link rel="stylesheet" href="vendor/tabulator.min.css">
+<style>
+  :root { --bg: #f4f1ea; --fg: #222; --panel: #fff; --red: #c62828; --blue: #1e4fc2; --scene: #dde6ee; --overlay: #fffd; --log: #f7f7f7; color-scheme: light; }
+  /* Sombre : suit le système, sauf choix explicite (data-theme) */
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #16181c; --fg: #e6e6e6; --panel: #23262c; --red: #ef5350; --blue: #6f9bff; --scene: #1c2430; --overlay: #23262cdd; --log: #1b1d22; color-scheme: dark; } }
+  :root[data-theme="dark"] { --bg: #16181c; --fg: #e6e6e6; --panel: #23262c; --red: #ef5350; --blue: #6f9bff; --scene: #1c2430; --overlay: #23262cdd; --log: #1b1d22; color-scheme: dark; }
+  body { margin: 0; font: 15px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  main { display: flex; gap: 16px; padding: 16px; flex-wrap: wrap; align-items: flex-start; }
+  #view { flex: 1 1 500px; height: calc(100dvh - 32px); min-height: 300px; position: relative; border-radius: 12px; overflow: hidden; }
+  #view canvas { display: block; touch-action: none; }
+  #hover { position: absolute; left: 10px; bottom: 10px; margin-right: 10px; background: var(--overlay); padding: 4px 8px; border-radius: 6px; font-size: 13px; pointer-events: none; }
+  #hover:empty { display: none; }
+  #help { position: absolute; right: 10px; top: 10px; margin-left: 10px; background: var(--overlay); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+  .touch { display: none; }
+  @media (hover: none) { .touch { display: inline; } .mouse { display: none; } }
+  .p1 { color: var(--red); } .p2 { color: var(--blue); }
+  aside { background: var(--panel); border-radius: 12px; padding: 16px; width: 300px; max-width: 100%; box-sizing: border-box; max-height: calc(100dvh - 32px); overflow: auto; }
+  aside h1 { margin: 0 0 8px; font-size: 20px; }
+  #status { font-weight: 600; margin: 8px 0; min-height: 2.8em; }
+  #log { height: 220px; overflow: auto; font-size: 13px; background: var(--log); padding: 6px; border-radius: 6px; }
+  button, select { font: inherit; padding: 4px 8px; margin: 2px 0; }
+  details { font-size: 13px; margin-top: 10px; }
+  #lobby { border: 1px solid var(--scene); border-radius: 8px; padding: 8px; margin: 8px 0; }
+  #members { padding-left: 18px; font-size: 13px; max-height: 140px; overflow: auto; }
+  #lobbyStatus { font-weight: 600; }
+  .records { margin: 0 16px 24px; padding: 16px; border-radius: 12px; background: var(--panel); }
+  .records h2 { margin: 0 0 8px; font-size: 20px; }
+  .records p { font-size: 14px; }
+  .records label { display: inline-block; margin-right: 12px; }
+  #leaderboard { margin-top: 12px; }
+  .tabulator { font-size: 14px; color: var(--fg); background: var(--panel); border-color: var(--scene); }
+  .tabulator .tabulator-header, .tabulator .tabulator-header .tabulator-col,
+  .tabulator .tabulator-footer { background: var(--log); color: var(--fg); }
+  .tabulator-row { background: var(--panel); color: var(--fg); }
+  .tabulator-row.tabulator-row-even { background: var(--log); }
+  .tabulator-row.tabulator-selectable:hover { background: var(--scene); }
+  @media (max-width: 860px) { /* tablette / mobile : plateau en haut, panneau dessous */
+    main { padding: 8px; gap: 8px; }
+    #view { flex-basis: 100%; height: 62dvh; }
+    aside { width: 100%; max-height: none; }
+    #log { height: 140px; }
+  }
+  @media (max-width: 860px) and (orientation: landscape) { /* mobile couché : côte à côte */
+    main { flex-wrap: nowrap; }
+    #view { flex: 1 1 auto; height: calc(100dvh - 16px); min-height: 0; }
+    aside { width: 280px; flex: none; max-height: calc(100dvh - 16px); }
+  }
+  @media (pointer: coarse) { button, select, input { min-height: 36px; } }
+  main { padding-right: 56px; }
+  #togglePanel { position: fixed; right: 8px; top: 50%; transform: translateY(-50%); z-index: 50;
+    width: 38px; height: 64px; border: 1px solid var(--scene); border-radius: 16px;
+    background: var(--panel); color: var(--fg); font-size: 28px; cursor: pointer; box-shadow: 0 3px 14px #0002; }
+  body.panel-collapsed #gamePanel { display: none; }
+  .rules { margin: 0 16px 32px; padding: clamp(16px, 3vw, 32px); background: var(--panel); border-radius: 16px; }
+  .rules h2 { margin-top: 0; font-size: 26px; }
+  .rules-intro { font-size: 18px; max-width: 800px; }
+  .rule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+  .rule-card { border: 1px solid var(--scene); border-radius: 14px; padding: 18px; background: var(--log); }
+  .rule-card h3 { margin: 0 0 10px; font-size: 19px; }
+  .rule-card { border-top: 4px solid #4274c5; }
+  .rule-card:nth-child(2), .rule-card:nth-child(5) { border-top-color: #399665; }
+  .rule-card:nth-child(3), .rule-card:nth-child(6) { border-top-color: #d99928; }
+  .rule-card p { margin: 8px 0; }
+  .unit { display: flex; gap: 12px; align-items: center; margin: 14px 0; }
+  .unit-icon { font-size: 34px; color: var(--blue); min-width: 40px; text-align: center; }
+  .rule-formula { padding: 10px; border-radius: 8px; background: var(--panel); font-weight: 600; }
+  .rule-tip { border-left: 4px solid #d99928; padding-left: 12px; }
+  .swal2-popup { background: var(--panel); color: var(--fg); }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three.module.js",
+  "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js"
+} }
+</script>
+</head>
+<body>
+<button id="togglePanel" type="button" aria-controls="gamePanel" aria-expanded="true"
+  aria-label="Masquer le panneau droit" title="Masquer le panneau droit">›</button>
+<main>
+  <div id="view">
+    <div id="help"><span class="mouse">Clic gauche : choisir / tourner · Molette : zoom · Clic droit : déplacer</span><span class="touch">Toucher : choisir · Glisser : tourner · 2 doigts : zoom / déplacer</span></div>
+    <div id="hover"></div>
+  </div>
+  <aside id="gamePanel" aria-label="Panneau de jeu">
+    <h1>TraGame - Traversal</h1>
+    <p><a href="/">Accueil des jeux</a></p>
+    <label>Pseudo : <input id="pseudo" maxlength="30" autocomplete="nickname"></label><br>
+    <p id="networkStatus" role="status"></p>
+    <section id="lobby" hidden aria-label="Salle et participants">
+      <div id="lobbyStatus" role="status"></div>
+      <ul id="members"></ul>
+      <button id="ready">Prêt</button>
+      <button id="launch">Lancer le match</button>
+      <button id="rematch">Revanche</button>
+      <button id="resetDuel">Nouvelle partie</button>
+      <button id="practice">Jouer contre le bot en attendant</button>
+    </section>
+    <label>Camp en local : <select id="side"><option value="1">Rouge (commence)</option><option value="2">Bleu</option></select></label><br>
+    <label>Terrain : <select id="terrain"><option value="random">Aléatoire</option></select></label><br>
+    <label>Niveau : <select id="level"><option value="1">Facile</option><option value="3" selected>Moyen</option><option value="6">Difficile</option></select></label><br>
+    <button id="new">Nouvelle partie</button> <button id="pvp"></button><br>
+    <label>Salle : <input id="room" size="8" maxlength="12" placeholder="code"></label> <button id="online"></button><br> <button id="undo">Annuler mon coup</button> <button id="recenter">Recentrer la vue</button> <button id="mute"></button> <button id="music"></button>
+    <label>Thème : <select id="theme"><option value="">Système</option><option value="light">Clair</option><option value="dark">Sombre</option></select></label>
+    <label>Volume musique : <input id="musicVol" type="range" min="0" max="100" step="1"></label>
+    <div id="status"></div>
+    <div id="terrainInfo"></div>
+    <div>Score - <span class="p1">Rouge <b id="s1">0</b></span> · <span class="p2">Bleu <b id="s2">0</b></span> · Coup <b id="mc">0</b>/200</div>
+    <div id="log"></div>
+  </aside>
+</main>
+<section class="records" aria-labelledby="recordsTitle">
+  <h2 id="recordsTitle">Classement global et statistiques</h2>
+  <p>Le classement récompense le nombre de matchs gagnés. Médailles 🥇 🥈 🥉 pour les trois premiers.
+    À égalité : minimum de déplacements pour gagner, puis captures, puis pseudo.</p>
+  <p>Les déplacements sont les coups de vos propres pièces, sortie comprise, sans les tours passés.
+    Cumul et minimum portent uniquement sur vos victoires. Les captures et pertes incluent toutes vos parties terminées.
+    Les matchs nuls comptent comme parties jouées. Les parties interrompues et l’entraînement local ne comptent pas.</p>
+  <label>Trier par : <select id="scoreSort">
+    <option value="wins">Victoires</option><option value="played">Parties jouées</option>
+    <option value="best_win_moves">Minimum pour gagner</option>
+    <option value="winning_moves_total">Cumul des déplacements gagnants</option>
+    <option value="captures">Pièces capturées</option><option value="losses">Pièces perdues</option>
+  </select></label>
+  <button id="refreshScores">Actualiser</button>
+  <p>Cliquez sur les colonnes pour trier. Maj + clic ajoute un critère. Les médailles restent liées au rang en victoires.</p>
+  <p id="scoresStatus" role="status"></p>
+  <div id="leaderboard" aria-label="Classement des joueurs"></div>
+</section>
+<section class="rules" aria-labelledby="rulesTitle">
+  <h2 id="rulesTitle">À l’assaut du relief !</h2>
+  <p class="rules-intro">Deux équipes, six pièces chacune et un plateau qui monte et qui descend.
+    Traversez le terrain pour sortir par le bord adverse. Rouge joue en premier ; à la revanche, on échange les camps !</p>
+  <div class="rule-grid">
+    <article class="rule-card">
+      <h3>1. Votre petite escouade</h3>
+      <div class="unit"><span class="unit-icon" aria-hidden="true">⬟</span><div><strong>L’explorateur</strong><br>5 points de mouvement · force 1<br>Le spécialiste des diagonales et des bonds.</div></div>
+      <div class="unit"><span class="unit-icon" aria-hidden="true">◆</span><div><strong>L’avant-garde</strong><br>4 points de mouvement · force 2<br>+1 en attaque si elle utilise ses 4 points.</div></div>
+      <div class="unit"><span class="unit-icon" aria-hidden="true">▲</span><div><strong>La sentinelle</strong><br>3 points de mouvement · force 3<br>Si elle sort la première, c’est gagné !</div></div>
+      <p>Vous avez deux pièces de chaque type. À votre tour, sélectionnez une pièce puis une destination proposée.</p>
+    </article>
+    <article class="rule-card">
+      <h3>2. La montagne, ça se mérite</h3>
+      <p>Avancez horizontalement ou verticalement. Un trajet peut tourner, mais il ne traverse aucune pièce.</p>
+      <p class="rule-formula">Coût d’un pas = 1 + l’écart de hauteur</p>
+      <p>Une case au même niveau coûte 1 point. Monter ou descendre de 2 niveaux coûte 3 points.</p>
+      <p class="rule-tip">L’explorateur peut, à la place, faire un pas en diagonale ou un bond de deux cases en ligne droite, sans coût de hauteur. Pour un bond, la case du milieu doit être libre.</p>
+    </article>
+    <article class="rule-card">
+      <h3>3. À plusieurs, on est plus costauds</h3>
+      <p class="rule-formula">Capture si attaque ≥ défense</p>
+      <p><strong>Attaque :</strong> force de votre pièce, +1 si elle part de plus haut, −1 si elle part de plus bas.
+        Ajoutez la force de base de vos alliés voisins de la cible, sur les quatre côtés.</p>
+      <p><strong>Défense :</strong> force de la cible, +1 par allié qui la touche sur un côté.</p>
+      <p>L’avant-garde gagne encore +1 si son attaque exige ses 4 points de mouvement.</p>
+      <p class="rule-tip">Survolez une cible de capture : le jeu vous montre le calcul avant de vous lancer.</p>
+    </article>
+    <article class="rule-card">
+      <h3>4. La grande évasion</h3>
+      <p>Rejoignez le bord adverse, puis franchissez la sortie. Une sortie normale demande encore au moins 1 point de mouvement depuis la dernière rangée.</p>
+      <p>Une pièce sortie rapporte sa force : explorateur 1, avant-garde 2, sentinelle 3.</p>
+      <p class="rule-formula">Sentinelle sortie en premier = victoire immédiate</p>
+      <p>Sinon, la partie s’arrête dès que deux pièces au total sont sorties : le plus de points gagne, avec match nul à égalité.</p>
+      <p>L’explorateur peut aussi franchir le bord adverse avec sa diagonale ou son bond spécial.</p>
+    </article>
+    <article class="rule-card">
+      <h3>5. Et si personne ne passe ?</h3>
+      <p>Aucun coup possible ? Le tour est passé automatiquement. Trois fois la même position avec le même camp au trait donnent un match nul.</p>
+      <p>À 200 coups, les points départagent les équipes. À égalité, on regarde la pièce active la plus proche de sa sortie, puis sa force. Encore à égalité ? Match nul.</p>
+      <p>Si un camp n’a plus de pièce active, c’est la domination totale : chaque camp ajoute la force de sa meilleure pièce encore active à ses points, puis on compare.</p>
+    </article>
+    <article class="rule-card">
+      <h3>6. Place au prochain duel</h3>
+      <p>Le premier joueur <strong>Prêt</strong> affronte l’admin, qui lance le match. Les autres regardent ou s’entraînent contre le bot.</p>
+      <p>Les paramètres restent verrouillés pendant la partie. Pour annuler le duel, l’admin choisit <strong>Nouvelle partie</strong> et confirme la fenêtre d’avertissement.</p>
+      <p>La revanche demande l’accord des deux joueurs. Les camps s’inversent pour que chacun commence à son tour.</p>
+      <p class="rule-tip">Les records comptent les victoires en ligne et vos statistiques de parties terminées. Un duel annulé et un entraînement contre le bot ne comptent pas.</p>
+    </article>
+  </div>
+</section>
+<script src="engine.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="vendor/tabulator.min.js"></script>
+<script src="vendor/sweetalert2.all.min.js"></script>
+<script type="module" src="game.js"></script>
+</body>
+</html>
