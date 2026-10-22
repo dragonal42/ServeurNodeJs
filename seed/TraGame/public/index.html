@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraGame - Traversal</title>
+<link rel="stylesheet" href="vendor/tabulator.min.css">
+<style>
+  :root { --bg: #f4f1ea; --fg: #222; --panel: #fff; --red: #c62828; --blue: #1e4fc2; --scene: #dde6ee; --overlay: #fffd; --log: #f7f7f7; color-scheme: light; }
+  /* Sombre : suit le système, sauf choix explicite (data-theme) */
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #16181c; --fg: #e6e6e6; --panel: #23262c; --red: #ef5350; --blue: #6f9bff; --scene: #1c2430; --overlay: #23262cdd; --log: #1b1d22; color-scheme: dark; } }
+  :root[data-theme="dark"] { --bg: #16181c; --fg: #e6e6e6; --panel: #23262c; --red: #ef5350; --blue: #6f9bff; --scene: #1c2430; --overlay: #23262cdd; --log: #1b1d22; color-scheme: dark; }
+  body { margin: 0; font: 15px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  main { display: flex; gap: 16px; padding: 16px; flex-wrap: wrap; align-items: flex-start; }
+  #view { flex: 1 1 500px; height: calc(100dvh - 32px); min-height: 300px; position: relative; border-radius: 12px; overflow: hidden; }
+  #view canvas { display: block; touch-action: none; }
+  #hover { position: absolute; left: 10px; bottom: 10px; margin-right: 10px; background: var(--overlay); padding: 4px 8px; border-radius: 6px; font-size: 13px; pointer-events: none; }
+  #hover:empty { display: none; }
+  #help { position: absolute; right: 10px; top: 10px; margin-left: 10px; background: var(--overlay); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+  .touch { display: none; }
+  @media (hover: none) { .touch { display: inline; } .mouse { display: none; } }
+  .p1 { color: var(--red); } .p2 { color: var(--blue); }
+  aside { background: var(--panel); border-radius: 12px; padding: 16px; width: 300px; max-width: 100%; box-sizing: border-box; max-height: calc(100dvh - 32px); overflow: auto; }
+  aside h1 { margin: 0 0 8px; font-size: 20px; }
+  #status { font-weight: 600; margin: 8px 0; min-height: 2.8em; }
+  #log { height: 220px; overflow: auto; font-size: 13px; background: var(--log); padding: 6px; border-radius: 6px; }
+  button, select { font: inherit; padding: 4px 8px; margin: 2px 0; }
+  details { font-size: 13px; margin-top: 10px; }
+  .records { margin: 0 16px 24px; padding: 16px; border-radius: 12px; background: var(--panel); }
+  .records h2 { margin: 0 0 8px; font-size: 20px; }
+  .records p { font-size: 14px; }
+  .records label { display: inline-block; margin-right: 12px; }
+  #leaderboard { margin-top: 12px; }
+  .tabulator { font-size: 14px; color: var(--fg); background: var(--panel); border-color: var(--scene); }
+  .tabulator .tabulator-header, .tabulator .tabulator-header .tabulator-col,
+  .tabulator .tabulator-footer { background: var(--log); color: var(--fg); }
+  .tabulator-row { background: var(--panel); color: var(--fg); }
+  .tabulator-row.tabulator-row-even { background: var(--log); }
+  .tabulator-row.tabulator-selectable:hover { background: var(--scene); }
+  @media (max-width: 860px) { /* tablette / mobile : plateau en haut, panneau dessous */
+    main { padding: 8px; gap: 8px; }
+    #view { flex-basis: 100%; height: 62dvh; }
+    aside { width: 100%; max-height: none; }
+    #log { height: 140px; }
+  }
+  @media (max-width: 860px) and (orientation: landscape) { /* mobile couché : côte à côte */
+    main { flex-wrap: nowrap; }
+    #view { flex: 1 1 auto; height: calc(100dvh - 16px); min-height: 0; }
+    aside { width: 280px; flex: none; max-height: calc(100dvh - 16px); }
+  }
+  @media (pointer: coarse) { button, select, input { min-height: 36px; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three.module.js",
+  "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js"
+} }
+</script>
+</head>
+<body>
+<main>
+  <div id="view">
+    <div id="help"><span class="mouse">Clic gauche : choisir / tourner · Molette : zoom · Clic droit : déplacer</span><span class="touch">Toucher : choisir · Glisser : tourner · 2 doigts : zoom / déplacer</span></div>
+    <div id="hover"></div>
+  </div>
+  <aside>
+    <h1>TraGame - Traversal</h1>
+    <p><a href="/">Accueil des jeux</a></p>
+    <label>Pseudo : <input id="pseudo" maxlength="30" autocomplete="nickname"></label><br>
+    <p id="networkStatus" role="status"></p>
+    <label>Je joue : <select id="side"><option value="1">Rouge (commence)</option><option value="2">Bleu</option></select></label><br>
+    <label>Terrain : <select id="terrain"><option value="random">Aléatoire</option></select></label><br>
+    <label>Niveau : <select id="level"><option value="1">Facile</option><option value="3" selected>Moyen</option><option value="6">Difficile</option></select></label><br>
+    <button id="new">Nouvelle partie</button> <button id="pvp"></button><br>
+    <label>Salle : <input id="room" size="8" maxlength="12" placeholder="code"></label> <button id="online"></button><br> <button id="undo">Annuler mon coup</button> <button id="recenter">Recentrer la vue</button> <button id="mute"></button> <button id="music"></button>
+    <label>Thème : <select id="theme"><option value="">Système</option><option value="light">Clair</option><option value="dark">Sombre</option></select></label>
+    <label>Volume musique : <input id="musicVol" type="range" min="0" max="100" step="1"></label>
+    <div id="status"></div>
+    <div id="terrainInfo"></div>
+    <div>Score - <span class="p1">Rouge <b id="s1">0</b></span> · <span class="p2">Bleu <b id="s2">0</b></span> · Coup <b id="mc">0</b>/200</div>
+    <div id="log"></div>
+    <details><summary>Règles express</summary>
+      <p>⬟ Explorateur - cône à 5 faces (mvt 5, force 1) · ◆ Avant-garde - coin (4, 2) · ▲ Sentinelle - prisme (3, 3).</p>
+      <p>Déplacement orthogonal ; coût = |Δhauteur| + 1. On ne traverse aucune pièce. L'explorateur peut à la place faire 1 pas en diagonale ou bondir de 2 cases tout droit, sans coût de hauteur.</p>
+      <p>Attaque : force + 1 si on est plus haut (−1 si plus bas) + force de base de chaque allié adjacent à la cible. Défense : force + 1 par allié adjacent. Capture si attaque ≥ défense. Avant-garde +1 si elle doit utiliser ses 4 points.</p>
+      <p>Sortir par le bord adverse (depuis la dernière rangée avec ≥ 1 point restant) rapporte la force de la pièce. Fin dès que 2 pièces sont sorties. Une Sentinelle sortie en premier gagne immédiatement.</p>
+      <p>Survolez une cible rouge pour voir le calcul du combat.</p>
+    </details>
+  </aside>
+</main>
+<section class="records" aria-labelledby="recordsTitle">
+  <h2 id="recordsTitle">Classement global et statistiques</h2>
+  <p>Le classement récompense le nombre de matchs gagnés. Médailles 🥇 🥈 🥉 pour les trois premiers.
+    À égalité : minimum de déplacements pour gagner, puis captures, puis pseudo.</p>
+  <p>Les déplacements sont les coups de vos propres pièces, sortie comprise, sans les tours passés.
+    Cumul et minimum portent uniquement sur vos victoires. Les captures et pertes incluent toutes vos parties terminées.
+    Les matchs nuls comptent comme parties jouées. Les parties interrompues et l’entraînement local ne comptent pas.</p>
+  <label>Trier par : <select id="scoreSort">
+    <option value="wins">Victoires</option><option value="played">Parties jouées</option>
+    <option value="best_win_moves">Minimum pour gagner</option>
+    <option value="winning_moves_total">Cumul des déplacements gagnants</option>
+    <option value="captures">Pièces capturées</option><option value="losses">Pièces perdues</option>
+  </select></label>
+  <button id="refreshScores">Actualiser</button>
+  <p>Cliquez sur les colonnes pour trier. Maj + clic ajoute un critère. Les médailles restent liées au rang en victoires.</p>
+  <p id="scoresStatus" role="status"></p>
+  <div id="leaderboard" aria-label="Classement des joueurs"></div>
+</section>
+<script src="engine.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="vendor/tabulator.min.js"></script>
+<script type="module" src="game.js"></script>
+</body>
+</html>
